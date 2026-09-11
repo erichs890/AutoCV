@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>AutoCV — telas</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  body { font-family: var(--font-ui); background: var(--page-bg); color: var(--ink); margin: 0; padding: 32px; }
+  h1 { font-size: 20px; margin: 0 0 24px; }
+  ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; list-style: none; padding: 0; }
+  a { display: block; background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); overflow: hidden; text-decoration: none; color: inherit; }
+  img { display: block; width: 100%; }
+  span { display: block; padding: 10px 12px; font-size: 13px; border-top: 1px solid var(--panel-border); }
+</style>
+</head>
+<body>
+<h1>AutoCV — telas exportadas</h1>
+<ul id="list"></ul>
+<script>
+  const screens = [
+    "01-painel", "01b-painel-vazio", "02-curriculo", "03-plataformas", "03b-modal-conectar",
+    "04-automacao", "05-configuracoes", "05b-perguntas", "05c-notificacoes-conta", "06-painel-mobile",
+  ];
+  document.getElementById("list").innerHTML = screens.map(s =>
+    `<li><a href="html/${s}.html"><img src="preview/${s}.png" alt="${s}"><span>${s}</span></a></li>`
+  ).join("");
+</script>
+</body>
+</html>
