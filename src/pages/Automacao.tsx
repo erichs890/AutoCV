@@ -52,7 +52,7 @@ export default function Automacao() {
   }
 
   return (
-    <div className="grid grid-cols-[1fr_380px] items-start gap-[15px] max-lg:grid-cols-1">
+    <div className="stagger grid grid-cols-[1fr_380px] items-start gap-[15px] max-lg:grid-cols-1">
       <div className="flex flex-col gap-4">
         <section aria-label="Status do robô" className="flex flex-wrap items-center gap-3.5 rounded-lg border border-black/50 bg-side-bottom px-3.5 py-3 text-white">
           <span className={`relative flex size-[34px] shrink-0 items-center justify-center rounded-full border-2 ${ativo ? 'border-aqua/40' : 'border-white/20'}`}>

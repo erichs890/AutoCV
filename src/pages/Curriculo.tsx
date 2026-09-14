@@ -45,7 +45,7 @@ export default function Curriculo() {
   }
 
   return (
-    <div className="grid grid-cols-[1fr_340px] items-start gap-4 max-lg:grid-cols-1">
+    <div className="stagger grid grid-cols-[1fr_340px] items-start gap-4 max-lg:grid-cols-1">
       <div className="flex flex-col gap-4">
         <Panel icon={Upload} title="Enviar currículo" bodyClassName="flex flex-col gap-3 p-3.5">
           <div

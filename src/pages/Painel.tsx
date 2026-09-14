@@ -47,7 +47,7 @@ export default function Painel() {
   const irPara = (p: number) => p >= 1 && p <= TOTAL_PAGINAS && setPagina(p);
 
   return (
-    <div className="flex flex-col gap-4 max-md:gap-2.5">
+    <div className="stagger flex flex-col gap-4 max-md:gap-2.5">
       <section aria-label="Resumo" className="grid grid-cols-4 gap-4 max-md:grid-cols-2 max-md:gap-2.5">
         {getStats().map(s => {
           const [icon, tom] = iconesStats[s.id];
@@ -214,7 +214,7 @@ const passos: [LucideIcon, string][] = [
 
 function EstadoVazio() {
   return (
-    <div className="flex min-h-full items-center justify-center p-[22px] max-md:p-0">
+    <div className="stagger flex min-h-full items-center justify-center p-[22px] max-md:p-0">
       <section aria-labelledby="vazio-titulo" className="flex w-[620px] max-w-full flex-col items-center gap-3.5 rounded-xl border border-panel-border bg-panel p-9 text-center max-md:p-5">
         <span className="flex size-24 items-center justify-center rounded-full bg-blue-dark text-white">
           <Bot size={44} aria-hidden />

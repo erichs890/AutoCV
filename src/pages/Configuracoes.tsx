@@ -47,7 +47,7 @@ export default function Configuracoes() {
   const salvar = () => setToast(true);
 
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="stagger flex min-h-full flex-col">
       <div role="tablist" aria-label="Configurações" onKeyDown={onKeyDown} className="flex items-end gap-1 overflow-x-auto px-1.5">
         {abas.map(({ id, label, icon: Icon }, i) => (
           <button
