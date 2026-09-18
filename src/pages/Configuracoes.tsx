@@ -1,22 +1,25 @@
-import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Accessibility, ArrowUp, Bell, Briefcase, Calendar, Camera, Car, Check, CircleCheck, CreditCard, Crown, DollarSign, House, Info, Languages,
-  Lightbulb, LogOut, MessageSquare, Pencil, Plane, Plus, Settings, Trash2, User, X, type LucideIcon,
+  Accessibility, Bell, Briefcase, Calendar, Car, Check, CircleCheck, DollarSign, House, Info, Languages,
+  MessageSquare, Plus, ShieldCheck, Sparkles, Trash2, User, X, type LucideIcon,
 } from 'lucide-react';
-import { getFaturas, getNotificacoes, getPerfil, getPerguntas, getPlano } from '../mocks/usuario';
+import { useEstado, type Perfil } from '../estado';
+import { NOTIFICACOES, iniciais } from '../dados';
+import ConfigIA from './ConfigIA';
 
 const abas = [
   { id: 'dados', label: 'Meus Dados', icon: User },
   { id: 'perguntas', label: 'Perguntas Automáticas', icon: MessageSquare },
+  { id: 'ia', label: 'Inteligência Artificial', icon: Sparkles },
   { id: 'notificacoes', label: 'Notificações', icon: Bell },
-  { id: 'conta', label: 'Conta e Assinatura', icon: CreditCard },
+  { id: 'conta', label: 'Dados e Privacidade', icon: ShieldCheck },
 ];
 
 const iconesPergunta: Record<string, LucideIcon> = {
   salario: DollarSign,
   experiencia: Briefcase,
-  viagem: Plane,
+  viagem: Calendar,
   remoto: House,
   cnh: Car,
   inicio: Calendar,
@@ -26,7 +29,8 @@ const iconesPergunta: Record<string, LucideIcon> = {
 
 export default function Configuracoes() {
   const [params, setParams] = useSearchParams();
-  const [toast, setToast] = useState(false);
+  const [toast, setToast] = useState('');
+  const timer = useRef<number>(undefined);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const indice = Math.max(0, abas.findIndex(a => a.id === params.get('tab')));
   const atual = abas[indice].id;
@@ -44,7 +48,11 @@ export default function Configuracoes() {
     ir(alvos[e.key]);
   }
 
-  const salvar = () => setToast(true);
+  function avisar(texto: string) {
+    setToast(texto);
+    clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setToast(''), 4000);
+  }
 
   return (
     <div className="stagger flex min-h-full flex-col">
@@ -76,15 +84,17 @@ export default function Configuracoes() {
         {toast && (
           <div role="status" className="absolute top-3 right-[18px] z-10 flex items-center gap-[9px] rounded-[9px] bg-green-deep px-3.5 py-2.5 text-[13px] font-bold text-white shadow-lg">
             <CircleCheck size={20} aria-hidden />
-            Alterações salvas com sucesso!
-            <button type="button" aria-label="Fechar aviso" onClick={() => setToast(false)} className="rounded p-0.5 hover:bg-white/15">
+            {toast}
+            <button type="button" aria-label="Fechar aviso" onClick={() => setToast('')} className="rounded p-0.5 hover:bg-white/15">
               <X size={14} aria-hidden />
             </button>
           </div>
         )}
-        {atual === 'dados' && <AbaDados onSalvar={salvar} />}
-        {atual === 'perguntas' && <AbaPerguntas onSalvar={salvar} />}
-        {(atual === 'notificacoes' || atual === 'conta') && <AbaNotificacoesConta onSalvar={salvar} />}
+        {atual === 'dados' && <AbaDados onSalvar={avisar} />}
+        {atual === 'perguntas' && <AbaPerguntas onSalvar={avisar} />}
+        {atual === 'ia' && <ConfigIA onSalvar={avisar} />}
+        {atual === 'notificacoes' && <AbaNotificacoes onSalvar={avisar} />}
+        {atual === 'conta' && <AbaPrivacidade />}
       </div>
     </div>
   );
@@ -92,7 +102,7 @@ export default function Configuracoes() {
 
 function Cabecalho({ titulo, sub }: { titulo: string; sub?: string }) {
   return (
-    <div className="mb-4 flex items-baseline gap-2.5 border-b border-panel-border pb-3">
+    <div className="mb-4 flex flex-wrap items-baseline gap-x-2.5 gap-y-1 border-b border-panel-border pb-3">
       <h2 className="text-lg font-bold">{titulo}</h2>
       {sub && <p className="text-xs text-ink-soft">{sub}</p>}
     </div>
@@ -117,126 +127,105 @@ function BarraSalvar({ texto, cancelar = true }: { texto: string; cancelar?: boo
   );
 }
 
-function Campo({ label, children, className = '' }: { label: string; children: ReactNode; className?: string }) {
+function Campo({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className={className}>
+    <label>
       <span className="label">{label}</span>
       {children}
     </label>
   );
 }
 
-function AbaDados({ onSalvar }: { onSalvar: () => void }) {
-  const p = getPerfil();
+function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
+  const { estado, salvar } = useEstado();
+  const p = estado.perfil!;
   const [sujo, setSujo] = useState(false);
-  const [foto, setFoto] = useState<string | null>(null);
+
+  async function enviar(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const dados = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
+    const { regimePreferido, ...perfil } = dados;
+    await salvar({ perfil: { ...p, ...(perfil as unknown as Perfil) }, automacao: { ...estado.automacao, regimePreferido: regimePreferido as 'CLT' | 'PJ' | 'perguntar' } });
+    setSujo(false);
+    onSalvar('Dados salvos.');
+  }
 
   return (
-    <form
-      className="flex flex-1 flex-col gap-4"
-      onChange={() => setSujo(true)}
-      onReset={() => {
-        setSujo(false);
-        setFoto(null);
-      }}
-      onSubmit={e => {
-        e.preventDefault();
-        setSujo(false);
-        onSalvar();
-      }}
-    >
-      <Cabecalho titulo="Meus dados" sub="usados pelo robô para preencher formulários das vagas" />
+    <form className="flex flex-1 flex-col gap-4" onChange={() => setSujo(true)} onReset={() => setSujo(false)} onSubmit={enviar}>
+      <Cabecalho titulo="Meus dados" sub="o robô usa isto para preencher os formulários das vagas" />
       <div className="flex gap-6 max-md:flex-col">
-        <div className="flex w-[190px] shrink-0 flex-col items-center gap-2.5 self-start rounded-lg border border-panel-border p-3.5 max-md:w-full">
-          {foto ? (
-            <img src={foto} alt="" className="size-[110px] rounded-full object-cover" />
-          ) : (
-            <span aria-hidden className="flex size-[110px] items-center justify-center rounded-full bg-purple text-3xl font-bold text-white">
-              MP
-            </span>
-          )}
-          <p className="text-sm font-bold">{p.nomeCurto}</p>
-          <p className="-mt-2 text-[11px] text-ink-soft">{p.cargo}</p>
-          <label className="btn btn-secondary btn-sm">
-            <Camera size={14} aria-hidden />
-            Trocar foto
-            <input type="file" accept="image/*" className="sr-only" onChange={e => e.target.files?.[0] && setFoto(URL.createObjectURL(e.target.files[0]))} />
-          </label>
+        <div className="flex w-[190px] shrink-0 flex-col items-center gap-2 self-start rounded-lg border border-panel-border p-3.5 max-md:w-full">
+          <span aria-hidden className="flex size-[110px] items-center justify-center rounded-full bg-purple text-3xl font-bold text-white">
+            {iniciais(p.nome)}
+          </span>
+          <p className="text-sm font-bold">{p.nome}</p>
+          {p.cargo && <p className="-mt-1 text-[11px] text-ink-soft">{p.cargo}</p>}
         </div>
         <div className="grid flex-1 grid-cols-2 content-start gap-3 max-md:grid-cols-1">
-          <Campo label="Nome completo"><input name="nome" autoComplete="name" defaultValue={p.nome} className="field" /></Campo>
-          <Campo label="E-mail"><input name="email" type="email" autoComplete="email" defaultValue={p.email} className="field" /></Campo>
-          <Campo label="Telefone"><input name="telefone" type="tel" autoComplete="tel" defaultValue={p.telefone} className="field" /></Campo>
-          <Campo label="Cidade / Estado">
-            <select name="cidade" defaultValue={p.cidade} className="field">
-              <option>São Paulo — SP</option>
-              <option>Campinas — SP</option>
-              <option>Rio de Janeiro — RJ</option>
-              <option>Belo Horizonte — MG</option>
+          <Campo label="Nome completo"><input name="nome" autoComplete="name" defaultValue={p.nome} required className="field" /></Campo>
+          <Campo label="E-mail"><input name="email" type="email" autoComplete="email" defaultValue={p.email} required className="field" /></Campo>
+          <Campo label="Celular com DDD"><input name="telefone" type="tel" autoComplete="tel" defaultValue={p.telefone} required className="field" /></Campo>
+          <Campo label="LinkedIn (link do perfil)"><input name="linkedin" placeholder="https://linkedin.com/in/seu-perfil" defaultValue={p.linkedin ?? ''} className="field" /></Campo>
+          <Campo label="Pretensão salarial"><input name="pretensao" placeholder="R$ 4.500,00" defaultValue={p.pretensao ?? ''} className="field" /></Campo>
+          <Campo label="Se a vaga aceitar CLT e PJ">
+            <select name="regimePreferido" defaultValue={estado.automacao.regimePreferido} className="field">
+              <option value="CLT">Prefiro CLT</option>
+              <option value="PJ">Prefiro PJ</option>
+              <option value="perguntar">Perguntar sempre</option>
             </select>
           </Campo>
-          <Campo label="LinkedIn"><input name="linkedin" defaultValue={p.linkedin} className="field" /></Campo>
-          <Campo label="GitHub"><input name="github" defaultValue={p.github} className="field" /></Campo>
-          <Campo label="Portfólio"><input name="portfolio" autoComplete="url" defaultValue={p.portfolio} className="field" /></Campo>
-          <Campo label="Endereço"><input name="endereco" autoComplete="street-address" defaultValue={p.endereco} className="field" /></Campo>
+          <Campo label="Cargo desejado"><input name="cargo" defaultValue={p.cargo ?? ''} className="field" /></Campo>
+          <Campo label="Cidade / Estado"><input name="cidade" defaultValue={p.cidade ?? ''} className="field" /></Campo>
         </div>
       </div>
 
       <section aria-labelledby="dados-extra" className="flex flex-col gap-3 border-t border-panel-border pt-3.5">
         <h3 id="dados-extra" className="text-sm font-bold">Dados complementares</h3>
         <div className="grid grid-cols-4 gap-3 max-lg:grid-cols-2 max-md:grid-cols-1">
-          <Campo label="CPF"><input name="cpf" inputMode="numeric" defaultValue={p.cpf} className="field tabular-nums" /></Campo>
-          <Campo label="Data de nascimento"><input name="nascimento" type="date" autoComplete="bday" defaultValue={p.nascimento} className="field" /></Campo>
+          <Campo label="GitHub"><input name="github" defaultValue={p.github ?? ''} className="field" /></Campo>
+          <Campo label="Portfólio"><input name="portfolio" autoComplete="url" defaultValue={p.portfolio ?? ''} className="field" /></Campo>
+          <Campo label="Data de nascimento"><input name="nascimento" type="date" autoComplete="bday" defaultValue={p.nascimento ?? ''} className="field" /></Campo>
           <Campo label="Disponibilidade">
-            <select name="disponibilidade" defaultValue={p.disponibilidade} className="field">
+            <select name="disponibilidade" defaultValue={p.disponibilidade ?? ''} className="field">
+              <option value="">Selecione</option>
               <option>Imediata</option>
               <option>15 dias</option>
               <option>30 dias</option>
             </select>
           </Campo>
-          <Campo label="PcD">
-            <select name="pcd" defaultValue={p.pcd} className="field">
-              <option>Não</option>
-              <option>Sim</option>
-            </select>
-          </Campo>
         </div>
         <div className="grid grid-cols-3 gap-3 max-lg:grid-cols-1">
-          <Campo label="Escolaridade">
-            <select name="escolaridade" defaultValue={p.escolaridade} className="field">
-              <option>Superior completo — Ciência da Computação</option>
-              <option>Superior incompleto</option>
-              <option>Técnico</option>
-              <option>Ensino médio</option>
-            </select>
-          </Campo>
-          <Campo label="Idiomas"><input name="idiomas" defaultValue={p.idiomas} className="field" /></Campo>
-          <Campo label="Pretensão salarial"><input name="pretensao" defaultValue={p.pretensao} className="field" /></Campo>
+          <Campo label="Escolaridade"><input name="escolaridade" defaultValue={p.escolaridade ?? ''} className="field" /></Campo>
+          <Campo label="Idiomas"><input name="idiomas" defaultValue={p.idiomas ?? ''} className="field" /></Campo>
+          <Campo label="Endereço"><input name="endereco" autoComplete="street-address" defaultValue={p.endereco ?? ''} className="field" /></Campo>
         </div>
-        <p className="flex w-[440px] max-w-full gap-2.5 rounded-[10px] border border-amber bg-amber/15 p-3 text-xs text-amber-ink">
-          <Lightbulb size={18} aria-hidden className="shrink-0" />
-          Dica: mantenha seus dados atualizados — o robô usa estas informações para preencher os formulários das vagas automaticamente.
-        </p>
       </section>
 
-      <BarraSalvar texto={sujo ? 'Você tem alterações não salvas nesta aba.' : 'Alterações são aplicadas ao salvar.'} />
+      <BarraSalvar texto={sujo ? 'Você tem alterações não salvas nesta aba.' : 'Nome, e-mail, celular, LinkedIn e pretensão entram direto no formulário do InHire.'} />
     </form>
   );
 }
 
-function AbaPerguntas({ onSalvar }: { onSalvar: () => void }) {
-  const [perguntas, setPerguntas] = useState(getPerguntas);
+function AbaPerguntas({ onSalvar }: { onSalvar: (t: string) => void }) {
+  const { estado, salvar } = useEstado();
+  const [perguntas, setPerguntas] = useState(estado.perguntas);
+
+  async function enviar(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const dados = new FormData(e.currentTarget);
+    const atualizadas = perguntas.map(q => ({
+      ...q,
+      pergunta: String(dados.get(`pergunta-${q.id}`) ?? q.pergunta),
+      resposta: String(dados.get(`resposta-${q.id}`) ?? ''),
+    }));
+    setPerguntas(atualizadas);
+    await salvar({ perguntas: atualizadas });
+    onSalvar('Respostas salvas.');
+  }
 
   return (
-    <form
-      className="flex flex-1 flex-col gap-4"
-      onReset={() => setPerguntas(getPerguntas())}
-      onSubmit={e => {
-        e.preventDefault();
-        onSalvar();
-      }}
-    >
-      <Cabecalho titulo="Perguntas automáticas" sub="respostas que o robô usa ao preencher formulários das plataformas" />
+    <form className="flex flex-1 flex-col gap-4" onReset={() => setPerguntas(estado.perguntas)} onSubmit={enviar}>
+      <Cabecalho titulo="Perguntas automáticas" sub="quando uma vaga fizer uma pergunta parecida, o robô responde com isto; se não houver resposta, ele pausa e pergunta a você" />
       <ul className="flex flex-col gap-2">
         {perguntas.map(q => {
           const Icon = iconesPergunta[q.icone] ?? MessageSquare;
@@ -247,16 +236,13 @@ function AbaPerguntas({ onSalvar }: { onSalvar: () => void }) {
                 <Icon size={16} />
               </span>
               {q.personalizada ? (
-                <input aria-label="Pergunta personalizada" placeholder="Digite a pergunta" defaultValue={q.pergunta} className="field w-[280px] font-bold" />
+                <input name={`pergunta-${q.id}`} aria-label="Pergunta personalizada" placeholder="Digite a pergunta" defaultValue={q.pergunta} className="field w-[280px] font-bold" />
               ) : (
                 <label htmlFor={idResposta} className="w-[280px] text-[13px] font-bold">
                   {q.pergunta}
                 </label>
               )}
-              <input id={idResposta} name={idResposta} aria-label={q.personalizada ? 'Resposta' : undefined} defaultValue={q.resposta} className="field min-w-[160px] flex-1" />
-              <button type="button" aria-label={`Editar resposta: ${q.pergunta || 'pergunta personalizada'}`} onClick={() => document.getElementById(idResposta)?.focus()} className="btn btn-secondary size-[26px] p-0">
-                <Pencil size={14} aria-hidden />
-              </button>
+              <input id={idResposta} name={idResposta} aria-label={q.personalizada ? 'Resposta' : undefined} defaultValue={q.resposta} placeholder="Sua resposta" className="field min-w-[160px] flex-1" />
               <button
                 type="button"
                 aria-label={`Excluir pergunta: ${q.pergunta || 'pergunta personalizada'}`}
@@ -282,93 +268,78 @@ function AbaPerguntas({ onSalvar }: { onSalvar: () => void }) {
   );
 }
 
-function AbaNotificacoesConta({ onSalvar }: { onSalvar: () => void }) {
-  const plano = getPlano();
-  const uso = Math.round((plano.usados / plano.limite) * 100);
+function AbaNotificacoes({ onSalvar }: { onSalvar: (t: string) => void }) {
+  const { estado, salvar } = useEstado();
+
+  async function enviar(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const dados = new FormData(e.currentTarget);
+    await salvar({ notificacoes: Object.fromEntries(NOTIFICACOES.map(n => [n.id, dados.get(n.id) === 'on'])) });
+    onSalvar('Preferências salvas.');
+  }
 
   return (
-    <div className="grid flex-1 grid-cols-[1fr_420px] gap-[18px] max-lg:grid-cols-1">
-      <form
-        className="flex flex-col gap-3.5"
-        onSubmit={e => {
-          e.preventDefault();
-          onSalvar();
-        }}
-      >
-        <Cabecalho titulo="Notificações" sub="avisos do robô" />
-        <ul className="flex flex-col gap-3.5">
-          {getNotificacoes().map(n => (
-            <li key={n.id}>
-              <label className="flex items-center gap-3 rounded-[7px] border border-panel-border p-[11px]">
-                <span className="flex-1">
-                  <span className="block text-[13px] font-bold">{n.titulo}</span>
-                  <span className="block text-[11px] text-ink-soft">{n.descricao}</span>
-                </span>
-                <input type="checkbox" role="switch" name={n.id} defaultChecked={n.ativo} className="switch" />
-              </label>
-            </li>
-          ))}
-        </ul>
-        <BarraSalvar texto="Alterações são aplicadas ao salvar." cancelar={false} />
-      </form>
-
-      <section aria-labelledby="conta-titulo" className="flex flex-col gap-3.5">
-        <div className="mb-0.5 border-b border-panel-border pb-3">
-          <h2 id="conta-titulo" className="text-lg font-bold">
-            Conta e assinatura
-          </h2>
-        </div>
-        <div className="flex flex-col gap-3 rounded-[10px] border border-blue/40 bg-blue/5 p-4">
-          <div className="flex items-center gap-3">
-            <span aria-hidden className="flex size-11 items-center justify-center rounded-xl bg-blue-dark text-white">
-              <Crown size={22} />
-            </span>
-            <div>
-              <p className="text-lg font-bold text-blue-deep">{plano.nome}</p>
-              <p className="text-xs text-blue-deep">
-                {plano.preco} — renova em {plano.renova}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <div className="flex text-xs font-bold text-blue-deep tabular-nums">
-              <span>
-                {plano.usados} de {plano.limite} envios utilizados este mês
+    <form className="flex flex-1 flex-col gap-3.5" onSubmit={enviar}>
+      <Cabecalho titulo="Notificações" sub="avisos do robô" />
+      <ul className="flex flex-col gap-2.5">
+        {NOTIFICACOES.map(n => (
+          <li key={n.id}>
+            <label className="flex items-center gap-3 rounded-[7px] border border-panel-border p-[11px]">
+              <span className="flex-1">
+                <span className="block text-[13px] font-bold">{n.titulo}</span>
+                <span className="block text-[11px] text-ink-soft">{n.descricao}</span>
               </span>
-              <span className="ml-auto">{uso}%</span>
-            </div>
-            <div role="progressbar" aria-label="Envios utilizados este mês" aria-valuemin={0} aria-valuemax={plano.limite} aria-valuenow={plano.usados} className="h-[18px] rounded-[9px] border border-panel-border bg-panel p-0.5">
-              <div className="h-full rounded-[7px] bg-blue-dark" style={{ width: `${uso}%` }} />
-            </div>
+              <input type="checkbox" role="switch" name={n.id} defaultChecked={estado.notificacoes[n.id] ?? n.padrao} className="switch" />
+            </label>
+          </li>
+        ))}
+      </ul>
+      <p className="text-[11px] text-ink-soft">Hoje a confirmação de cada candidatura aparece no log e no Painel. O envio por e-mail ainda não está ligado.</p>
+      <BarraSalvar texto="Alterações são aplicadas ao salvar." cancelar={false} />
+    </form>
+  );
+}
+
+function AbaPrivacidade() {
+  const { estado, limpar } = useEstado();
+
+  const itens = [
+    ['Currículos', estado.curriculos.length],
+    ['Empresas do InHire', estado.automacao.tenants.length],
+    ['Vagas encontradas', estado.vagas.length],
+    ['Candidaturas', estado.candidaturas.length],
+  ] as const;
+
+  return (
+    <div className="flex flex-1 flex-col gap-4">
+      <Cabecalho titulo="Dados e privacidade" sub="esta é uma instalação local do AutoCV" />
+      <p className="max-w-[70ch] text-[13px] text-ink-soft">
+        Tudo fica neste computador, na pasta <code className="font-mono text-ink">%LOCALAPPDATA%\AutoCV</code>: seus dados, os PDFs, as vagas encontradas e o perfil do navegador que o robô usa.
+        Nada é enviado a servidor nenhum além das próprias páginas de vagas. O InHire não pede login, então nenhuma senha é guardada.
+      </p>
+
+      <dl className="grid grid-cols-4 gap-3 max-lg:grid-cols-2">
+        {itens.map(([rotulo, valor]) => (
+          <div key={rotulo} className="rounded-lg border border-panel-border p-3">
+            <dt className="text-[11px] text-ink-soft">{rotulo}</dt>
+            <dd className="text-xl font-bold tabular-nums">{valor}</dd>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" className="btn btn-success">
-              <ArrowUp size={16} aria-hidden />
-              Fazer upgrade
-            </button>
-            <button type="button" className="btn btn-secondary">
-              <Settings size={16} aria-hidden />
-              Gerenciar plano
-            </button>
-          </div>
-        </div>
-        <div className="rounded-lg border border-panel-border p-3.5">
-          <h3 className="mb-2 text-[13px] font-bold">Últimas faturas</h3>
-          <ul>
-            {getFaturas().map(f => (
-              <li key={f.data} className="flex items-center gap-2 border-b border-panel-border/60 py-1.5 text-xs last:border-0">
-                <span className="flex-1 tabular-nums">{f.data}</span>
-                <span className="font-bold tabular-nums">{f.valor}</span>
-                <span className="rounded-lg bg-green-deep px-2 py-0.5 text-[10px] font-bold text-white">Paga</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <button type="button" className="btn btn-secondary mt-auto w-full">
-          <LogOut size={16} aria-hidden />
-          Encerrar assinatura
+        ))}
+      </dl>
+
+      <div className="mt-auto flex flex-wrap items-center gap-2.5 rounded-lg border border-orange/50 bg-orange/10 p-3.5">
+        <p className="flex-1 text-xs text-ink">Apagar tudo remove seu cadastro, currículos, vagas e histórico deste computador. Não dá para desfazer.</p>
+        <button
+          type="button"
+          className="btn btn-danger"
+          onClick={() => {
+            if (confirm('Apagar todos os dados do AutoCV neste computador?')) void limpar();
+          }}
+        >
+          <Trash2 size={16} aria-hidden />
+          Apagar todos os dados
         </button>
-      </section>
+      </div>
     </div>
   );
 }

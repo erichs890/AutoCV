@@ -1,250 +1,211 @@
 import { useState } from 'react';
-import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
-import { Activity, Bot, FileText, Gauge, GripVertical, ListOrdered, MailOpen, Pause, Play, Plug, Send, Table, Target, Upload, type LucideIcon } from 'lucide-react';
-import type { AppContexto } from '../App';
-import type { Periodo } from '../types';
+import { Link } from 'react-router-dom';
+import { Activity, Bot, CheckCircle2, Clock, FileText, ListOrdered, Pause, Play, Plug, Send, Table, Target } from 'lucide-react';
 import Panel from '../components/Panel';
 import Badge from '../components/Badge';
 import StatCard from '../components/StatCard';
 import BarChart from '../components/BarChart';
-import Countdown from '../components/Countdown';
-import { getAtividade, getStats } from '../mocks/atividade';
-import { getEnvios, POR_PAGINA, TOTAL_ENVIOS } from '../mocks/envios';
-import { getFila, getResumoFila } from '../mocks/fila';
-import { getPlataforma } from '../mocks/plataformas';
-import { getConfig } from '../mocks/usuario';
+import { useEstado } from '../estado';
+import { post } from '../api';
+import { STATUS_VAGA, getPlataforma } from '../dados';
 
-const iconesStats: Record<string, [LucideIcon, string]> = {
-  enviados: [Send, 'bg-blue-dark'],
-  compativeis: [Target, 'bg-green-dark'],
-  respostas: [MailOpen, 'bg-orange'],
-  compatibilidade: [Gauge, 'bg-purple'],
-};
-
-const periodos: { id: Periodo; label: string; legenda: string }[] = [
-  { id: 'semana', label: 'Semana', legenda: 'Envios por dia — últimos 7 dias' },
-  { id: 'mes', label: 'Mês', legenda: 'Envios por semana — últimas 4 semanas' },
-  { id: 'ano', label: 'Ano', legenda: 'Envios por mês — 2010' },
-];
-
-const TOTAL_PAGINAS = Math.ceil(TOTAL_ENVIOS / POR_PAGINA);
+const POR_PAGINA = 10;
 const pg = 'flex h-6 w-[26px] items-center justify-center rounded border text-xs font-bold tabular-nums aria-disabled:cursor-not-allowed aria-disabled:opacity-40';
+const dataCurta = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 
 export default function Painel() {
-  const { robo, setRobo } = useOutletContext<AppContexto>();
-  const [params] = useSearchParams();
-  const [periodo, setPeriodo] = useState<Periodo>('semana');
+  const { estado } = useEstado();
   const [pagina, setPagina] = useState(1);
+  const { envios, fila, vagas, automacao, robo } = estado;
 
-  // ?vazio força o estado vazio para revisão visual
-  if (!getConfig().roboConfigurado || params.has('vazio')) return <EstadoVazio />;
+  if (!automacao.configurada) return <PrimeirosPassos />;
 
-  const envios = getEnvios(pagina);
-  const resumo = getResumoFila();
-  const legenda = periodos.find(p => p.id === periodo)!.legenda;
-  const inicioJanela = Math.min(Math.max(pagina - 2, 1), TOTAL_PAGINAS - 4);
-  const primeiro = (pagina - 1) * POR_PAGINA + 1;
-  const irPara = (p: number) => p >= 1 && p <= TOTAL_PAGINAS && setPagina(p);
+  const hoje = dataCurta(new Date());
+  const compativeis = vagas.filter(v => v.status !== 'ignorada').length;
+  const serie = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - 6 + i);
+    return {
+      rotulo: d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', ''),
+      valor: envios.filter(e => e.data === dataCurta(d)).length,
+    };
+  });
+  const paginas = Math.max(1, Math.ceil(envios.length / POR_PAGINA));
+  const visiveis = envios.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
+  const irPara = (p: number) => p >= 1 && p <= paginas && setPagina(p);
 
   return (
     <div className="stagger flex flex-col gap-4 max-md:gap-2.5">
       <section aria-label="Resumo" className="grid grid-cols-4 gap-4 max-md:grid-cols-2 max-md:gap-2.5">
-        {getStats().map(s => {
-          const [icon, tom] = iconesStats[s.id];
-          return <StatCard key={s.id} icon={icon} tom={tom} valor={s.valor.toLocaleString('pt-BR') + s.unidade} label={s.label} labelCurto={s.labelCurto} delta={s.delta} sufixo={s.sufixo} />;
-        })}
+        <StatCard icon={Send} tom="bg-blue-dark" valor={envios.length} label="Candidaturas" />
+        <StatCard icon={Clock} tom="bg-green-dark" valor={envios.filter(e => e.data === hoje).length} label="Envios hoje" />
+        <StatCard icon={ListOrdered} tom="bg-orange" valor={fila.length} label="Vagas na fila" />
+        <StatCard icon={Target} tom="bg-purple" valor={compativeis} label="Vagas compatíveis" nota={estado.ultimaBusca ? `última busca ${new Date(estado.ultimaBusca).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : undefined} />
       </section>
 
       <div className="grid h-[380px] grid-cols-[1fr_330px] gap-4 max-lg:grid-cols-[1fr_300px] max-md:h-auto max-md:grid-cols-1">
         <Panel icon={Activity} title="Atividade do Robô" className="max-md:hidden" bodyClassName="flex flex-col gap-2.5 p-3.5">
-          <div className="flex items-center">
-            <p className="text-xs text-ink-soft">{legenda}</p>
-            <div role="group" aria-label="Período" className="ml-auto flex">
-              {periodos.map(p => (
-                <button
-                  key={p.id}
-                  type="button"
-                  aria-pressed={periodo === p.id}
-                  onClick={() => setPeriodo(p.id)}
-                  className={`-ml-px border px-2.5 py-1 text-[11px] font-bold first:ml-0 first:rounded-l-md last:rounded-r-md ${
-                    periodo === p.id ? 'relative border-blue-dark bg-blue-dark text-white' : 'border-panel-border bg-panel text-ink hover:bg-page-bg'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <BarChart dados={getAtividade(periodo)} legenda={legenda} />
+          <p className="text-xs text-ink-soft">Candidaturas por dia — últimos 7 dias</p>
+          {envios.length === 0 ? (
+            <Vazio texto="Nenhuma candidatura ainda. Quando o robô começar a enviar, o gráfico aparece aqui." />
+          ) : (
+            <BarChart dados={serie} legenda="Candidaturas por dia — últimos 7 dias" />
+          )}
         </Panel>
 
-        <Panel icon={ListOrdered} title="Fila atual do robô" tone="green" bodyClassName="flex flex-col gap-1.5 p-3">
-          <div className="flex flex-col items-center gap-0.5 rounded-lg bg-side-bottom p-2 max-md:flex-row max-md:justify-center max-md:gap-2.5">
-            <p className="text-[10px] font-bold tracking-[0.15em] text-white/70 uppercase">Próximo envio em</p>
-            <Countdown ativo={robo === 'ativo'} className="text-[27px] font-bold text-aqua max-md:text-[22px]" />
-          </div>
-          <ul className="grid grid-cols-3 gap-2 max-md:hidden">
-            {[
-              [resumo.naFila, 'na fila', 'text-blue'],
-              [resumo.hoje, 'hoje', 'text-green-dark'],
-              [resumo.comErro, 'com erro', 'text-orange-deep'],
-            ].map(([n, label, cor]) => (
-              <li key={label} className="rounded-md border border-panel-border px-1 py-2 text-center">
-                <span className={`block text-xl font-bold tabular-nums ${cor}`}>{n}</span>
-                <span className="text-[11px] text-ink-soft">{label}</span>
-              </li>
-            ))}
-          </ul>
-          <ol aria-label="Próximos envios" className="flex flex-col gap-1.5 max-md:hidden">
-            {getFila()
-              .slice(0, 2)
-              .map(item => (
-                <li key={item.id} className="flex items-center gap-2 rounded-md border border-panel-border px-[9px] py-[7px]">
-                  <GripVertical size={14} aria-hidden className="text-ink-soft" />
+        <Panel icon={ListOrdered} title="Fila do robô" tone="green" bodyClassName="flex flex-col gap-2.5 p-3">
+          {fila.length === 0 ? (
+            <Vazio texto={automacao.modo === 'manual' ? 'Nada na fila. Em modo manual, escolha as vagas em Automação.' : 'Nada na fila. Ligue o robô para ele buscar vagas compatíveis.'} />
+          ) : (
+            <ol aria-label="Próximos envios" className="flex flex-col gap-1.5">
+              {fila.slice(0, 4).map(v => (
+                <li key={v.id} className="flex items-center gap-2 rounded-md border border-panel-border px-[9px] py-[7px]">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-bold">{item.cargo}</p>
-                    <p className="text-[11px] text-ink-soft">{item.empresa}</p>
+                    <p className="truncate text-xs font-bold">{v.titulo}</p>
+                    <p className="text-[11px] text-ink-soft">{v.empresa}</p>
                   </div>
-                  <span className="text-[11px] font-bold text-blue-dark tabular-nums">{item.horario}</span>
+                  <span className={`rounded-[9px] px-2 py-0.5 text-[10px] font-bold ${STATUS_VAGA[v.status].classe}`}>{STATUS_VAGA[v.status].rotulo}</span>
                 </li>
               ))}
-          </ol>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" className="btn btn-danger" disabled={robo !== 'ativo'} onClick={() => setRobo('pausado')}>
+            </ol>
+          )}
+          <div className="mt-auto grid grid-cols-2 gap-2">
+            <button type="button" className="btn btn-danger" disabled={robo !== 'ativo'} onClick={() => post('/robo', { ligar: false })}>
               <Pause size={16} aria-hidden />
-              <span>
-                Pausar<span className="max-md:hidden"> automação</span>
-              </span>
+              Pausar
             </button>
-            <button type="button" className="btn btn-success" disabled={robo === 'ativo'} onClick={() => setRobo('ativo')}>
+            <button type="button" className="btn btn-success" disabled={robo === 'ativo'} onClick={() => post('/robo', { ligar: true })}>
               <Play size={16} aria-hidden />
-              Retomar
+              Ligar
             </button>
           </div>
         </Panel>
       </div>
 
-      <Panel icon={Table} title="Últimos envios" tone="slate" aside={`${TOTAL_ENVIOS} envios no total`} bodyClassName="">
-        <div className="overflow-x-auto max-md:hidden">
-          <table className="w-full min-w-[860px] border-collapse text-left text-xs">
-            <thead className="text-[11px]">
-              <tr className="h-[30px] border-b border-panel-border">
-                <th scope="col" className="px-3.5 font-bold">Vaga</th>
-                <th scope="col" className="w-[200px] font-bold">Empresa</th>
-                <th scope="col" className="w-[190px] font-bold">Plataforma</th>
-                <th scope="col" className="w-[150px] font-bold">Data / Hora</th>
-                <th scope="col" className="w-[144px] pr-3.5 font-bold">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {envios.map(e => {
-                const p = getPlataforma(e.plataforma);
-                return (
-                  <tr key={e.id} className="h-[38px] border-b border-panel-border/60 last:border-0">
-                    <td className="px-3.5 font-bold text-blue-dark">{e.vaga}</td>
-                    <td>{e.empresa}</td>
-                    <td>
-                      <span className="flex items-center gap-[7px]">
-                        <span aria-hidden className={`flex size-5 items-center justify-center rounded-[5px] text-[10px] font-bold text-white ${p.cor}`}>
-                          {p.sigla}
-                        </span>
-                        {p.nome}
-                      </span>
-                    </td>
-                    <td className="text-ink-soft tabular-nums">
-                      {e.data} {e.hora}
-                    </td>
-                    <td className="pr-3.5">
-                      <Badge status={e.status} />
-                    </td>
+      <Panel icon={Table} title="Últimas candidaturas" tone="slate" aside={envios.length > 0 ? `${envios.length} no total` : undefined} bodyClassName="">
+        {envios.length === 0 ? (
+          <div className="p-6">
+            <Vazio texto="Nenhuma candidatura enviada ainda. Busque vagas em Automação e ligue o robô para começar." />
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto max-md:hidden">
+              <table className="w-full min-w-[860px] border-collapse text-left text-xs">
+                <thead className="text-[11px]">
+                  <tr className="h-[30px] border-b border-panel-border">
+                    <th scope="col" className="px-3.5 font-bold">Vaga</th>
+                    <th scope="col" className="w-[200px] font-bold">Empresa</th>
+                    <th scope="col" className="w-[190px] font-bold">Plataforma</th>
+                    <th scope="col" className="w-[150px] font-bold">Data / Hora</th>
+                    <th scope="col" className="w-[144px] pr-3.5 font-bold">Status</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody>
+                  {visiveis.map(e => {
+                    const p = getPlataforma(e.plataforma);
+                    return (
+                      <tr key={e.id} className="h-[38px] border-b border-panel-border/60 last:border-0">
+                        <td className="px-3.5 font-bold text-blue-dark">{e.vaga}</td>
+                        <td>{e.empresa}</td>
+                        <td>
+                          <span className="flex items-center gap-[7px]">
+                            <span aria-hidden className={`flex size-5 items-center justify-center rounded-[5px] text-[10px] font-bold text-white ${p.cor}`}>
+                              {p.sigla}
+                            </span>
+                            {p.nome}
+                          </span>
+                        </td>
+                        <td className="text-ink-soft tabular-nums">
+                          {e.data} {e.hora}
+                        </td>
+                        <td className="pr-3.5">
+                          <Badge status={e.status} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
-        <ul className="hidden flex-col gap-2 p-2.5 max-md:flex">
-          {envios.map(e => (
-            <li key={e.id} className="rounded-[7px] border border-panel-border p-[9px]">
-              <p className="text-[13px] font-bold text-blue-dark">{e.vaga}</p>
-              <div className="mt-1 flex items-center gap-1.5">
-                <p className="flex-1 text-[11px] text-ink-soft tabular-nums">
-                  {e.empresa} • {getPlataforma(e.plataforma).nome} • {e.hora}
+            <ul className="hidden flex-col gap-2 p-2.5 max-md:flex">
+              {visiveis.map(e => (
+                <li key={e.id} className="rounded-[7px] border border-panel-border p-[9px]">
+                  <p className="text-[13px] font-bold text-blue-dark">{e.vaga}</p>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <p className="flex-1 text-[11px] text-ink-soft tabular-nums">
+                      {e.empresa} • {getPlataforma(e.plataforma).nome} • {e.hora}
+                    </p>
+                    <Badge status={e.status} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            {paginas > 1 && (
+              <nav aria-label="Paginação" className="flex h-[42px] items-center gap-[5px] border-t border-panel-border px-3.5 max-md:hidden">
+                <p className="mr-auto text-[11px] text-ink-soft tabular-nums">
+                  Mostrando {(pagina - 1) * POR_PAGINA + 1}–{(pagina - 1) * POR_PAGINA + visiveis.length} de {envios.length}
                 </p>
-                <Badge status={e.status} />
-              </div>
-            </li>
-          ))}
-        </ul>
-
-        <nav aria-label="Paginação dos envios" className="flex h-[42px] items-center gap-[5px] border-t border-panel-border px-3.5 max-md:hidden">
-          <p className="mr-auto text-[11px] text-ink-soft tabular-nums">
-            Mostrando {primeiro}–{primeiro + envios.length - 1} de {TOTAL_ENVIOS}
-          </p>
-          <button type="button" aria-label="Página anterior" aria-disabled={pagina === 1} onClick={() => irPara(pagina - 1)} className={`${pg} border-panel-border bg-panel hover:bg-page-bg`}>
-            «
-          </button>
-          {Array.from({ length: 5 }, (_, i) => inicioJanela + i).map(p => (
-            <button
-              key={p}
-              type="button"
-              aria-label={`Página ${p}`}
-              aria-current={p === pagina ? 'page' : undefined}
-              onClick={() => irPara(p)}
-              className={`${pg} ${p === pagina ? 'border-blue-dark bg-blue-dark text-white' : 'border-panel-border bg-panel hover:bg-page-bg'}`}
-            >
-              {p}
-            </button>
-          ))}
-          <button type="button" aria-label="Próxima página" aria-disabled={pagina === TOTAL_PAGINAS} onClick={() => irPara(pagina + 1)} className={`${pg} border-panel-border bg-panel hover:bg-page-bg`}>
-            »
-          </button>
-        </nav>
+                <button type="button" aria-label="Página anterior" aria-disabled={pagina === 1} onClick={() => irPara(pagina - 1)} className={`${pg} border-panel-border bg-panel hover:bg-page-bg`}>
+                  «
+                </button>
+                {Array.from({ length: paginas }, (_, i) => i + 1).map(p => (
+                  <button key={p} type="button" aria-label={`Página ${p}`} aria-current={p === pagina ? 'page' : undefined} onClick={() => irPara(p)} className={`${pg} ${p === pagina ? 'border-blue-dark bg-blue-dark text-white' : 'border-panel-border bg-panel hover:bg-page-bg'}`}>
+                    {p}
+                  </button>
+                ))}
+                <button type="button" aria-label="Próxima página" aria-disabled={pagina === paginas} onClick={() => irPara(pagina + 1)} className={`${pg} border-panel-border bg-panel hover:bg-page-bg`}>
+                  »
+                </button>
+              </nav>
+            )}
+          </>
+        )}
       </Panel>
     </div>
   );
 }
 
-const passos: [LucideIcon, string][] = [
-  [FileText, '1. Envie seu currículo'],
-  [Plug, '2. Conecte plataformas'],
-  [Play, '3. Ligue o robô'],
-];
+function Vazio({ texto }: { texto: string }) {
+  return <p className="flex flex-1 items-center justify-center p-4 text-center text-xs text-ink-soft">{texto}</p>;
+}
 
-function EstadoVazio() {
+function PrimeirosPassos() {
+  const { estado } = useEstado();
+  const passos = [
+    { icon: FileText, texto: 'Envie seu currículo em PDF', pronto: estado.curriculos.some(c => c.perfilBusca), to: '/curriculo', acao: 'Ver currículo' },
+    { icon: Plug, texto: 'Conecte o InHire e escolha as empresas', pronto: Object.keys(estado.conexoes).length > 0, to: '/plataformas', acao: 'Conectar' },
+    { icon: Play, texto: 'Configure e ligue o robô', pronto: estado.automacao.configurada, to: '/automacao', acao: 'Configurar' },
+  ];
+
   return (
     <div className="stagger flex min-h-full items-center justify-center p-[22px] max-md:p-0">
-      <section aria-labelledby="vazio-titulo" className="flex w-[620px] max-w-full flex-col items-center gap-3.5 rounded-xl border border-panel-border bg-panel p-9 text-center max-md:p-5">
+      <section aria-labelledby="passos-titulo" className="flex w-[620px] max-w-full flex-col items-center gap-3.5 rounded-xl border border-panel-border bg-panel p-9 text-center max-md:p-5">
         <span className="flex size-24 items-center justify-center rounded-full bg-blue-dark text-white">
           <Bot size={44} aria-hidden />
         </span>
-        <h2 id="vazio-titulo" className="text-[22px] font-bold">
-          Seu robô ainda não está configurado
+        <h2 id="passos-titulo" className="text-[22px] font-bold">
+          Falta pouco, {estado.perfil?.nome.split(' ')[0]}
         </h2>
-        <p className="text-sm text-ink-soft">
-          Você ainda não configurou seu robô. Vá em Automação para escolher as plataformas, o currículo e o intervalo entre os envios — o AutoCV cuida do resto.
-        </p>
-        <ol className="grid w-full grid-cols-3 gap-2.5 max-md:grid-cols-1">
-          {passos.map(([Icon, texto]) => (
-            <li key={texto} className="flex flex-col items-center gap-1.5 rounded-lg border border-panel-border p-3 text-xs font-bold">
-              <span className="flex size-[34px] items-center justify-center rounded-[9px] border border-panel-border bg-page-bg">
-                <Icon size={16} aria-hidden />
+        <p className="text-sm text-ink-soft">Conecte o InHire e configure a automação para o robô começar a buscar vagas e enviar seu currículo.</p>
+        <ol className="flex w-full flex-col gap-2.5">
+          {passos.map(({ icon: Icon, texto, pronto, to, acao }) => (
+            <li key={texto} className="flex items-center gap-3 rounded-lg border border-panel-border p-3 text-left">
+              <span className={`flex size-[34px] shrink-0 items-center justify-center rounded-[9px] ${pronto ? 'bg-green-deep text-white' : 'border border-panel-border bg-page-bg'}`}>
+                {pronto ? <CheckCircle2 size={18} aria-hidden /> : <Icon size={16} aria-hidden />}
               </span>
-              {texto}
+              <span className="flex-1 text-[13px] font-bold">{texto}</span>
+              {pronto ? (
+                <span className="text-[11px] font-bold text-green-deep">Pronto</span>
+              ) : (
+                <Link to={to} className="btn btn-primary btn-sm">
+                  {acao}
+                </Link>
+              )}
             </li>
           ))}
         </ol>
-        <div className="flex flex-wrap justify-center gap-2.5">
-          <Link to="/automacao" className="btn btn-success btn-lg">
-            <Play size={18} aria-hidden />
-            Configurar automação
-          </Link>
-          <Link to="/curriculo" className="btn btn-secondary btn-lg">
-            <Upload size={18} aria-hidden />
-            Enviar currículo
-          </Link>
-        </div>
       </section>
     </div>
   );
