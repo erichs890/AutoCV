@@ -10,6 +10,7 @@ import { adaptarComIA, adaptarCurriculo, validarAdaptacao } from './resume/adapt
 import { completar, iaAtiva, lerIA } from './ia.ts';
 import { markdownParaPdf } from './resume/mdToPdf.ts';
 import { similaridade } from './resume/texto.ts';
+import { categoriaSensivel, decidirSensivel } from '../src/sensiveis.ts';
 
 const registrar = log.registrar;
 
@@ -18,8 +19,24 @@ export const PERGUNTA_LINKEDIN = 'Link do seu perfil no LinkedIn (a vaga exige)'
 export const PERGUNTA_PRETENSAO = 'Sua pretensão salarial (ex.: R$ 4.500,00)';
 export const PERGUNTA_REGIME = 'Regime de contratação';
 
-/** Resposta salva (Configurações → Perguntas Automáticas) para uma pergunta parecida, ou null. */
+/** Aproxima uma resposta às opções da vaga ("A | B" para múltipla); texto livre passa direto. */
+function casarComOpcoes(pergunta: PerguntaExtra, resposta: string): string | null {
+  if ((pergunta.tipo === 'opcoes' || pergunta.tipo === 'multipla') && pergunta.opcoes?.length) {
+    const casar = (r: string) => pergunta.opcoes!.find(o => similaridade(o, r) >= 0.7) ?? null;
+    if (pergunta.tipo === 'opcoes') return casar(resposta);
+    const casadas = resposta.split(/\s*\|\s*|\s*;\s*/).map(casar).filter((o): o is string => o !== null);
+    return casadas.length ? [...new Set(casadas)].join(' | ') : null;
+  }
+  return resposta;
+}
+
+/**
+ * Resposta salva (Configurações → Perguntas Automáticas) para uma pergunta parecida, ou null.
+ * Perguntas de autodeclaração (src/sensiveis.ts) NÃO entram na similaridade: só resposta dada para a pergunta literal
+ * ou a política de Configurações → Autodeclaração; senão null, e a pendência avisa que é dado sensível.
+ */
 export function respostaSalva(pergunta: PerguntaExtra): string | null {
+  if (categoriaSensivel(pergunta.rotulo)) return decidirSensivel(pergunta, ler.perguntas(), ler.sensiveis(), r => casarComOpcoes(pergunta, r));
   let melhor: { resposta: string; s: number } | null = null;
   for (const p of ler.perguntas()) {
     if (!p.resposta.trim()) continue;
@@ -27,14 +44,7 @@ export function respostaSalva(pergunta: PerguntaExtra): string | null {
     if (s >= 0.55 && (!melhor || s > melhor.s)) melhor = { resposta: p.resposta.trim(), s };
   }
   if (!melhor) return null;
-  if ((pergunta.tipo === 'opcoes' || pergunta.tipo === 'multipla') && pergunta.opcoes?.length) {
-    // Resposta salva precisa bater com as opções da vaga (múltipla: "A | B")
-    const casar = (r: string) => pergunta.opcoes!.find(o => similaridade(o, r) >= 0.7) ?? null;
-    if (pergunta.tipo === 'opcoes') return casar(melhor.resposta);
-    const casadas = melhor.resposta.split(/\s*\|\s*|\s*;\s*/).map(casar).filter((o): o is string => o !== null);
-    return casadas.length ? [...new Set(casadas)].join(' | ') : null;
-  }
-  return melhor.resposta;
+  return casarComOpcoes(pergunta, melhor.resposta);
 }
 
 function decidirRegime(vaga: Vaga): 'CLT' | 'PJ' | null | 'perguntar' {
@@ -45,9 +55,13 @@ function decidirRegime(vaga: Vaga): 'CLT' | 'PJ' | null | 'perguntar' {
 
 function pendente(vaga: Vaga, pendencia: Pendencia) {
   const status = pendencia.tipo === 'pergunta' ? 'aguardando_pergunta' : 'aguardando_aprovacao';
+  // Autodeclaração: a interface mostra que é dado sensível e a resposta vale só para esta pergunta literal
+  const sensivel = pendencia.tipo === 'pergunta' ? categoriaSensivel(pendencia.pergunta.rotulo) : null;
+  if (pendencia.tipo === 'pergunta' && sensivel) pendencia = { ...pendencia, pergunta: { ...pendencia.pergunta, sensivel: sensivel.id } };
   vagas.atualizar(vaga.id, { status, pendencia });
-  registrar('aguardo', pendencia.tipo === 'pergunta' ? `"${vaga.titulo}" aguarda sua resposta: ${pendencia.pergunta.rotulo}` : `"${vaga.titulo}" aguarda sua aprovação do currículo adaptado.`);
-  emitir({ tipo: 'aviso', nivel: 'info', msg: pendencia.tipo === 'pergunta' ? `O InHire perguntou: ${pendencia.pergunta.rotulo}` : `Currículo adaptado pronto para revisão: ${vaga.titulo}` });
+  const rotulo = pendencia.tipo === 'pergunta' ? pendencia.pergunta.rotulo : '';
+  registrar('aguardo', pendencia.tipo === 'pergunta' ? `"${vaga.titulo}" aguarda sua resposta${sensivel ? ` (autodeclaração — ${sensivel.rotulo.toLowerCase()}, dado sensível)` : ''}: ${rotulo}` : `"${vaga.titulo}" aguarda sua aprovação do currículo adaptado.`);
+  emitir({ tipo: 'aviso', nivel: 'info', msg: pendencia.tipo === 'pergunta' ? `${sensivel ? 'Autodeclaração pedida pelo InHire' : 'O InHire perguntou'}: ${rotulo}` : `Currículo adaptado pronto para revisão: ${vaga.titulo}` });
 }
 
 /** IA (se configurada) com validação de entidades; qualquer problema → cai para a adaptação por regras. Guarda o resultado na vaga. */

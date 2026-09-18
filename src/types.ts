@@ -1,4 +1,6 @@
 // Tipos compartilhados entre o front (src/) e o núcleo (core/)
+import type { ConfigSensiveis } from './sensiveis.ts';
+export type { ConfigSensiveis } from './sensiveis.ts';
 
 export type StatusEnvio = 'Enviado' | 'Visualizado' | 'Pendente' | 'Erro';
 export type EstadoRobo = 'ativo' | 'pausado' | 'erro';
@@ -148,6 +150,8 @@ export interface PerguntaExtra {
   rotulo: string;
   tipo: 'texto' | 'opcoes' | 'multipla' | 'arquivo'; // multipla = várias opções, resposta guardada como "A | B"
   opcoes?: string[];
+  obrigatoria?: boolean; // false = o formulário avança sem resposta
+  sensivel?: string; // categoria de autodeclaração (src/sensiveis.ts): a interface avisa e a resposta nunca é reaproveitada por similaridade
 }
 
 /** Estrutura do formulário descoberta na última tentativa (cache/diagnóstico) */
@@ -226,6 +230,7 @@ export interface Estado {
   fila: Vaga[];
   log: LinhaLog[];
   perguntas: Pergunta[];
+  sensiveis: ConfigSensiveis; // política para perguntas de autodeclaração
   notificacoes: Record<string, boolean>;
   proximoEnvioEm: string | null;
   ultimaBusca: string | null;

@@ -582,7 +582,7 @@ function Pendencia({ vaga }: { vaga: Vaga }) {
         aberto
         onFechar={() => post('/fila/remover', { id: vaga.id })}
         icon={MessageCircleQuestion}
-        titulo="O InHire perguntou"
+        titulo={q.sensivel ? 'O InHire pede uma autodeclaração' : 'O InHire perguntou'}
         rodape={
           <>
             <button type="button" className="btn btn-secondary" onClick={() => post('/fila/remover', { id: vaga.id })}>
@@ -597,6 +597,12 @@ function Pendencia({ vaga }: { vaga: Vaga }) {
         <p className="text-xs text-ink-soft">
           Vaga <strong className="text-ink">{vaga.titulo}</strong> em {vaga.empresa}
         </p>
+        {q.sensivel && (
+          <p className="rounded-lg border border-amber bg-amber/15 p-2.5 text-[11px] text-amber-ink">
+            <strong>Pergunta de autodeclaração (dado sensível).</strong> O robô não responde isso sozinho nem reaproveita respostas parecidas: sua escolha vale só para esta pergunta exata. Você pode definir uma regra em{' '}
+            <Link to="/configuracoes?aba=sensiveis" className="font-bold underline">Configurações › Autodeclaração</Link>.
+          </p>
+        )}
         <p className="text-sm font-bold">{q.rotulo}</p>
         {q.tipo === 'opcoes' && q.opcoes?.length ? (
           <div className="flex flex-col gap-1.5">
@@ -626,7 +632,7 @@ function Pendencia({ vaga }: { vaga: Vaga }) {
         )}
         <label className="flex items-center gap-2 text-xs">
           <input type="checkbox" checked={guardar} onChange={e => setGuardar(e.target.checked)} className="size-4" />
-          Guardar esta resposta para perguntas parecidas
+          {q.sensivel ? 'Guardar só para esta pergunta exata' : 'Guardar esta resposta para perguntas parecidas'}
         </label>
       </Modal>
     );

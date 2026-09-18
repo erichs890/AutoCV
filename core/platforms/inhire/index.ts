@@ -19,7 +19,7 @@ const jobIdDe = (vaga: Vaga) => vaga.id.replace(/^inhire:[^:]+:/, '');
 /** Perguntas que a vaga com certeza vai fazer (diversidade obrigatória + Typeform obrigatório), lidas da API. */
 async function perguntasPrevias(vaga: Vaga): Promise<PerguntaExtra[]> {
   const schema = await lerSchemaFormulario(vaga.tenant, jobIdDe(vaga));
-  return perguntasCertas(schema).map(p => ({ rotulo: p.rotulo, tipo: p.tipo, opcoes: p.opcoes }));
+  return perguntasCertas(schema).map(p => ({ rotulo: p.rotulo, tipo: p.tipo, opcoes: p.opcoes, obrigatoria: true }));
 }
 
 // Requisições que criam/enviam a candidatura: em modo ensaio são abortadas no navegador, como garantia dura

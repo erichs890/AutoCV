@@ -127,7 +127,11 @@ export async function descobrirCampos(raiz: Raiz): Promise<CampoDom[]> {
     const vistos = new Set<Element>();
 
     // Dropdowns customizados (react-dropdown-select) e comboboxes
-    for (const dd of raizForm.querySelectorAll('.react-dropdown-select, [role="combobox"]')) {
+    // react-dropdown-select (InHire), combobox ARIA e botões que abrem lista ([aria-haspopup]) — inclusive os de opções
+    // "ricas" (título + descrição), cujo texto principal é lido em abrirDropdown
+    for (const dd of raizForm.querySelectorAll('.react-dropdown-select, [role="combobox"], [aria-haspopup="listbox"], [aria-haspopup="menu"]')) {
+      const pai = dd.closest('.react-dropdown-select');
+      if (pai && pai !== dd) continue; // parte interna de um dropdown já contado
       if (!visivel(dd)) continue;
       const interno = dd.querySelector('input');
       if (interno) vistos.add(interno);
@@ -258,7 +262,7 @@ export function papelDe(campo: Pick<CampoDom, 'nome' | 'rotulo' | 'tipo'>): Pape
 export function resolverCampo(campo: CampoDom, dados: DadosCandidatura): Resolucao {
   const papel = papelDe(campo);
   const extra = (tipo: PerguntaExtra['tipo']): Resolucao => {
-    const pergunta: PerguntaExtra = { rotulo: campo.rotulo || campo.nome, tipo, opcoes: tipo === 'texto' ? undefined : campo.opcoes };
+    const pergunta: PerguntaExtra = { rotulo: campo.rotulo || campo.nome, tipo, opcoes: tipo === 'texto' ? undefined : campo.opcoes, obrigatoria: campo.obrigatorio };
     const resposta = dados.responder(pergunta);
     if (resposta !== null) return tipo === 'multipla' ? { acao: 'valores', valores: dividirMultipla(resposta) } : { acao: 'valor', valor: resposta };
     if (!campo.obrigatorio) return { acao: 'pular', motivo: 'opcional, sem resposta guardada' };
@@ -312,7 +316,13 @@ const campoLoc = (raiz: Raiz, c: CampoDom): Locator => raiz.locator(`[data-autoc
 const opcaoLoc = (raiz: Raiz, c: CampoDom, k: number): Locator => raiz.locator(`[data-autocv-grupo="${c.i}"][data-autocv-opcao="${k}"]`).first();
 
 /** Abre um dropdown customizado, opcionalmente filtra digitando, e devolve os textos das opções visíveis. */
-async function abrirDropdown(raiz: Raiz, loc: Locator, filtro?: string): Promise<string[]> {
+/** Opção de dropdown: componentes "ricos" têm título + descrição; a comparação usa só o título. */
+export interface OpcaoDropdown {
+  textoPrincipal: string;
+  textoSecundario?: string;
+}
+
+async function abrirDropdown(raiz: Raiz, loc: Locator, filtro?: string): Promise<OpcaoDropdown[]> {
   const opcoes = raiz.locator('[role="option"]');
   const p = pagina(raiz);
   if (!(await loc.getAttribute('aria-expanded').catch(() => null)) || (await loc.getAttribute('aria-expanded')) === 'false') await loc.click();
@@ -321,11 +331,15 @@ async function abrirDropdown(raiz: Raiz, loc: Locator, filtro?: string): Promise
     await p.keyboard.type(filtro, { delay: 30 });
     // Lista filtrada (ou carregada da API, no caso da cidade) — espera aparecer algo parecido com o filtro
     await ate(async () => {
-      const t = await opcoes.allTextContents();
+      const t = (await lerOpcoes(opcoes)).map(o => o.textoPrincipal);
       return t.length > 0 && melhorOpcao(t, filtro) >= 0;
     }, 8000, 300);
   }
-  // Só o primeiro trecho de texto: "Homem Cisgênero" sem a descrição que vem colada
+  return lerOpcoes(opcoes);
+}
+
+// Título = primeiro trecho de texto ("Homem Cisgênero"); o que sobra é a descrição ("Nasceu homem e se identifica...")
+function lerOpcoes(opcoes: Locator): Promise<OpcaoDropdown[]> {
   return opcoes.evaluateAll(els =>
     els.map(el => {
       const primeiro = (n: Node): string => {
@@ -338,7 +352,10 @@ async function abrirDropdown(raiz: Raiz, loc: Locator, filtro?: string): Promise
         }
         return '';
       };
-      return (primeiro(el) || el.textContent || '').replace(/\s+/g, ' ').trim();
+      const tudo = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      const principal = (primeiro(el) || tudo).replace(/\s+/g, ' ').trim();
+      const resto = tudo.startsWith(principal) ? tudo.slice(principal.length).trim() : '';
+      return { textoPrincipal: principal, ...(resto ? { textoSecundario: resto } : {}) };
     }),
   );
 }
@@ -350,24 +367,26 @@ async function fecharDropdown(raiz: Raiz) {
 export async function lerOpcoesDropdown(raiz: Raiz, loc: Locator): Promise<string[]> {
   const opcoes = await abrirDropdown(raiz, loc);
   await fecharDropdown(raiz);
-  return opcoes;
+  return opcoes.map(o => o.textoPrincipal);
 }
 
 async function escolherNoDropdown(raiz: Raiz, c: CampoDom, valor: string) {
   const loc = campoLoc(raiz, c);
   let opcoes = await abrirDropdown(raiz, loc);
-  let k = melhorOpcao(opcoes, valor);
+  const titulos = () => opcoes.map(o => o.textoPrincipal);
+  let k = melhorOpcao(titulos(), valor);
   if (k < 0 || opcoes.length > 30) {
     opcoes = await abrirDropdown(raiz, loc, valor);
-    k = melhorOpcao(opcoes, valor);
+    k = melhorOpcao(titulos(), valor);
   }
   if (k < 0) {
     await fecharDropdown(raiz);
-    throw new Error(`opção "${valor}" não existe em "${c.rotulo}" (opções: ${opcoes.slice(0, 8).join(', ') || 'nenhuma carregou'})`);
+    throw new Error(`opção "${valor}" não existe em "${c.rotulo}" (opções: ${titulos().slice(0, 8).join(', ') || 'nenhuma carregou'})`);
   }
   await raiz.locator('[role="option"]').nth(k).click();
   await ate(async () => (await raiz.locator('[role="option"]').count()) === 0, 3000);
-  return opcoes[k];
+  const o = opcoes[k];
+  return o.textoSecundario ? `${o.textoPrincipal} (${o.textoSecundario.slice(0, 60)}${o.textoSecundario.length > 60 ? '…' : ''})` : o.textoPrincipal;
 }
 
 async function anexar(raiz: Raiz, c: CampoDom, caminho: string, log: Log) {
@@ -531,7 +550,7 @@ export async function preencherTypeform(frame: Raiz, dados: DadosCandidatura, lo
       await avancar();
       continue;
     }
-    const pergunta: PerguntaExtra = { rotulo: titulo, tipo, opcoes: tipo === 'texto' ? undefined : opcoes };
+    const pergunta: PerguntaExtra = { rotulo: titulo, tipo, opcoes: tipo === 'texto' ? undefined : opcoes, obrigatoria };
     const resposta = dados.responder(pergunta);
     if (resposta === null) {
       if (obrigatoria) return { resultado: { status: 'pergunta', pergunta }, etapa, respondidas };

@@ -25,6 +25,8 @@ npm run dev    # interface, em outro
 
 O formulário do InHire muda de vaga para vaga (uma ou duas abas, país/cidade, perguntas de diversidade, e um questionário "uma pergunta por tela" com as perguntas próprias da empresa, que pode vir antes ou depois de criar a candidatura). O robô não supõe um formulário fixo: antes de abrir o navegador ele lê pela API quais perguntas a vaga vai fazer e pede a você as que ainda não tem resposta; depois descobre os campos de cada etapa na própria página, preenche os fixos com seus dados (nome, e-mail, celular, CPF, LinkedIn, cidade, pretensão, CLT/PJ, currículo), responde as demais com as Perguntas Automáticas e avança até o envio. Cada campo preenchido aparece no log.
 
+Perguntas de **autodeclaração** (identidade de gênero, orientação sexual, cor/raça, deficiência, religião, saúde, grupos de diversidade) são uma categoria à parte: o robô nunca as responde por semelhança com outra pergunta nem deduz nada do seu currículo. Em **Configurações › Autodeclaração e dados sensíveis** você escolhe se ele sempre pausa e pergunta, se marca "Prefiro não responder" quando a pergunta é opcional, ou se usa respostas padrão suas por tipo. O que você responde vale só para aquela pergunta exata e fica no seu computador.
+
 O InHire exige LinkedIn (pedido no cadastro) e pretensão salarial; algumas vagas pedem cidade e CPF: preencha em Configurações › Meus Dados, ou o robô pergunta na primeira candidatura e guarda. Quando uma vaga faz uma pergunta que você ainda não respondeu, ou quando o currículo adaptado precisa de aprovação, só aquela vaga pausa e a interface pede sua decisão.
 
 ## Descoberta de vagas

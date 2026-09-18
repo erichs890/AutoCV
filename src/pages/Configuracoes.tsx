@@ -2,17 +2,19 @@ import { useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } 
 import { useSearchParams } from 'react-router-dom';
 import {
   Accessibility, Bell, Briefcase, Calendar, Car, Check, CircleCheck, DollarSign, House, Info, Languages,
-  MessageSquare, Plus, RadarIcon, ShieldCheck, Sparkles, Trash2, User, X, type LucideIcon,
+  MessageSquare, Plus, RadarIcon, ShieldAlert, ShieldCheck, Sparkles, Trash2, User, X, type LucideIcon,
 } from 'lucide-react';
 import { useEstado, type Perfil } from '../estado';
 import { NOTIFICACOES, iniciais } from '../dados';
 import { CPF_PATTERN, TELEFONE_PATTERN, mascaraCPF, mascaraMoeda, mascaraTelefone, mascarar } from '../mascaras';
 import ConfigIA from './ConfigIA';
 import ConfigDescoberta from './ConfigDescoberta';
+import ConfigSensiveis from './ConfigSensiveis';
 
 const abas = [
   { id: 'dados', label: 'Meus Dados', icon: User },
   { id: 'perguntas', label: 'Perguntas Automáticas', icon: MessageSquare },
+  { id: 'sensiveis', label: 'Autodeclaração e dados sensíveis', icon: ShieldAlert },
   { id: 'ia', label: 'Inteligência Artificial', icon: Sparkles },
   { id: 'descoberta', label: 'Descoberta de vagas', icon: RadarIcon },
   { id: 'notificacoes', label: 'Notificações', icon: Bell },
@@ -95,6 +97,7 @@ export default function Configuracoes() {
         )}
         {atual === 'dados' && <AbaDados onSalvar={avisar} />}
         {atual === 'perguntas' && <AbaPerguntas onSalvar={avisar} />}
+        {atual === 'sensiveis' && <ConfigSensiveis onSalvar={avisar} />}
         {atual === 'ia' && <ConfigIA onSalvar={avisar} />}
         {atual === 'descoberta' && <ConfigDescoberta onSalvar={avisar} />}
         {atual === 'notificacoes' && <AbaNotificacoes onSalvar={avisar} />}

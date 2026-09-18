@@ -3,6 +3,7 @@ import { candidaturas, empresas, kv, log, vagas } from './storage/db.ts';
 import { emitir } from './events.ts';
 import { iaParaFront } from './ia.ts';
 import { descobertaParaFront } from './platforms/inhire/discovery.ts';
+import { SENSIVEIS_PADRAO, type ConfigSensiveis } from '../src/sensiveis.ts';
 
 export const AUTOMACAO_PADRAO: ConfigAutomacao = {
   configurada: false,
@@ -47,13 +48,14 @@ export const ler = {
   automacao: () => ({ ...AUTOMACAO_PADRAO, ...kv.get<Partial<ConfigAutomacao>>('automacao', {}) }),
   robo: () => kv.get<EstadoRobo>('robo', 'pausado'),
   perguntas: () => kv.get<Pergunta[]>('perguntas', PERGUNTAS_PADRAO),
+  sensiveis: () => ({ ...SENSIVEIS_PADRAO, ...kv.get<Partial<ConfigSensiveis>>('sensiveis', {}) }),
   notificacoes: () => kv.get<Record<string, boolean>>('notificacoes', {}),
   proximoEnvioEm: () => kv.get<string | null>('proximoEnvioEm', null),
   ultimaBusca: () => kv.get<string | null>('ultimaBusca', null),
 };
 
 // Chaves que o front pode gravar direto (o resto é derivado ou controlado pelo núcleo)
-const GRAVAVEIS = ['perfil', 'curriculos', 'conexoes', 'automacao', 'robo', 'perguntas', 'notificacoes'] as const;
+const GRAVAVEIS = ['perfil', 'curriculos', 'conexoes', 'automacao', 'robo', 'perguntas', 'sensiveis', 'notificacoes'] as const;
 
 export function salvarParcial(parcial: Partial<Estado>) {
   for (const chave of GRAVAVEIS) if (chave in parcial) kv.set(chave, parcial[chave]);
@@ -90,6 +92,7 @@ export function montarEstado(): Estado {
     fila: todas.filter(v => FILA.has(v.status)).sort((a, b) => (a.posicao ?? 0) - (b.posicao ?? 0)),
     log: log.listar(),
     perguntas: ler.perguntas(),
+    sensiveis: ler.sensiveis(),
     notificacoes: ler.notificacoes(),
     proximoEnvioEm: ler.proximoEnvioEm(),
     ultimaBusca: ler.ultimaBusca(),

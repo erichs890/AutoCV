@@ -206,6 +206,35 @@ const { mascaraCPF } = await import('../src/mascaras.ts');
 assert.equal(mascaraCPF('52998224725'), '529.982.247-25');
 console.log('✓ Motor de formulário: schema, opções e classificação');
 
+// 7) Autodeclaração / dados sensíveis: detecção por palavra-chave e política (funções puras)
+const { categoriaSensivel, decidirSensivel, PREFIRO_NAO } = await import('../src/sensiveis.ts');
+assert.equal(categoriaSensivel('Qual é a sua identidade de gênero?')?.id, 'genero');
+assert.equal(categoriaSensivel('Qual é a sua orientação sexual?')?.id, 'orientacao');
+assert.equal(categoriaSensivel('Qual é a sua cor ou raça?')?.id, 'raca');
+assert.equal(categoriaSensivel('Deseja se candidatar para a vaga como pessoa com deficiência?')?.id, 'pcd');
+assert.equal(categoriaSensivel('Você pertence a um dos grupos abaixo?')?.id, 'grupos');
+assert.equal(categoriaSensivel('Você se declara uma pessoa com deficiência?')?.id, 'pcd');
+assert.equal(categoriaSensivel('Qual o seu nível de conversação em inglês?'), null);
+assert.equal(categoriaSensivel('Possui CNH categoria B?'), null);
+assert.equal(categoriaSensivel('Qual a cor do seu carro?'), null, '"cor" sozinho não é sensível');
+assert.ok(PREFIRO_NAO.test('Prefiro não responder') && PREFIRO_NAO.test('Não desejo informar') && !PREFIRO_NAO.test('Não'));
+const casarOp = (ops: string[]) => (r: string) => ops.find(o => o.toLowerCase() === r.toLowerCase()) ?? null;
+const genero = { rotulo: 'Qual é a sua identidade de gênero?', opcoes: ['Homem Cisgênero', 'Mulher Cisgênero', 'Prefiro não responder'], obrigatoria: false };
+const casar = casarOp(genero.opcoes);
+// 1) nunca por similaridade: resposta guardada para pergunta parecida (outra vaga) não vale
+assert.equal(decidirSensivel(genero, [{ pergunta: 'Qual a sua identidade de gênero? *', resposta: 'Mulher Cisgênero' }], { modo: 'perguntar', padroes: {} }, casar), null);
+// 2) pergunta literal (mesmo texto, ignorando acento/caixa) vale
+assert.equal(decidirSensivel(genero, [{ pergunta: 'qual e a sua identidade de genero?', resposta: 'Mulher Cisgênero' }], { modo: 'perguntar', padroes: {} }, casar), 'Mulher Cisgênero');
+// 3) prefiro_nao só quando opcional e a opção existe
+assert.equal(decidirSensivel(genero, [], { modo: 'prefiro_nao', padroes: {} }, casar), 'Prefiro não responder');
+assert.equal(decidirSensivel({ ...genero, obrigatoria: true }, [], { modo: 'prefiro_nao', padroes: {} }, casar), null, 'obrigatória → pausa');
+assert.equal(decidirSensivel({ ...genero, opcoes: ['Homem', 'Mulher'] }, [], { modo: 'prefiro_nao', padroes: {} }, casar), null, 'sem a opção → pausa');
+// 4) padrão por categoria, só se bater com uma opção
+assert.equal(decidirSensivel({ ...genero, obrigatoria: true }, [], { modo: 'padrao', padroes: { genero: 'Homem Cisgênero' } }, casar), 'Homem Cisgênero');
+assert.equal(decidirSensivel({ ...genero, obrigatoria: true }, [], { modo: 'padrao', padroes: { genero: 'Agênero' } }, casar), null, 'padrão que não existe na vaga → pausa');
+assert.equal(decidirSensivel({ rotulo: 'Nível de inglês', opcoes: ['Básico'] }, [], { modo: 'padrao', padroes: {} }, casar), null, 'pergunta comum não passa por aqui');
+console.log('✓ Autodeclaração: detecção por palavra-chave e política sem similaridade');
+
 // 5b) Descoberta: subdomínio a partir de qualquer forma de entrada, URL com página de carreira, seed bem formado
 const { extrairSubdominio } = await import('./platforms/inhire/discovery.ts');
 const { urlVaga } = await import('./platforms/inhire/api.ts');

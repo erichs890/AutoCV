@@ -147,10 +147,12 @@ export async function lerSchemaFormulario(tenant: string, jobId: string): Promis
   } else if (sub.status !== 404) {
     throw new Error(`InHire ${sub.status} ao consultar o formulário da vaga`);
   }
-  if (typeformId) {
+  // Alguns formId são UUIDs de formulários nativos do InHire (não existem no Typeform: 404). Nesse caso as
+  // perguntas só serão conhecidas no navegador (form-app), e o motor sequencial resolve na hora.
+  if (typeformId && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(typeformId)) {
     const tf = await fetch(`https://form.typeform.com/forms/${encodeURIComponent(typeformId)}`, { headers: { accept: 'application/json', 'user-agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(15000) });
-    if (!tf.ok) throw new Error(`Typeform ${tf.status} ao ler as perguntas da vaga`);
-    perguntas.push(...perguntasDoTypeform((await tf.json()) as DefinicaoTypeform));
+    if (tf.ok) perguntas.push(...perguntasDoTypeform((await tf.json()) as DefinicaoTypeform));
+    else if (tf.status !== 404) throw new Error(`Typeform ${tf.status} ao ler as perguntas da vaga`);
   }
   const cfg = typeformId ? await configTenant(tenant).catch(() => null) : null;
   const fluxoCondicional = !!cfg?.publicCapabilities?.includes('requireCustomFormCompletion');
