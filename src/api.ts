@@ -1,5 +1,5 @@
 // Cliente do núcleo local (core/server.ts). Só fala com localhost.
-export const URL_CORE = 'http://localhost:4780';
+export const URL_CORE = import.meta.env.VITE_CORE_URL ?? 'http://localhost:4780';
 
 export async function api<T = unknown>(caminho: string, init?: RequestInit): Promise<T> {
   const r = await fetch(URL_CORE + caminho, { headers: { 'content-type': 'application/json' }, ...init });

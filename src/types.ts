@@ -89,6 +89,7 @@ export interface ConfigAutomacao {
   curriculo: number | null;
   area: string;
   cargo: string;
+  senioridade: string; // '' = a detectada no currículo
   local: string;
   salarioMin: number;
   salarioMax: number;
@@ -103,7 +104,31 @@ export interface ConfigAutomacao {
   ensaio: boolean; // preenche tudo, não envia
   mostrarNavegador: boolean;
   scoreMinimo: number; // 0–100
-  tenants: string[]; // empresas do InHire (slug de <slug>.inhire.app)
+}
+
+// ─── Descoberta de vagas (InHire) ────────────────────────────
+export interface EmpresaInHire {
+  subdominio: string; // <subdominio>.inhire.app
+  nome: string;
+  urlVagas: string;
+  ativo: boolean;
+  origem: 'seed' | 'manual' | 'busca';
+  ultimaVerificacao: string | null; // ISO
+  totalVagas: number; // vagas publicadas na última verificação
+  falhas: number; // verificações seguidas com erro
+  criadaEm: string;
+}
+
+export interface ConfigDescoberta {
+  intervaloHoras: number; // revarredura da lista de empresas (Fonte A)
+  fonteB: boolean; // descoberta ativa de novas empresas via API de busca (1x/dia)
+  googleCx: string; // ID do mecanismo (Programmable Search Engine)
+  googleKeyDefinida: boolean; // a chave em si nunca sai do núcleo
+  ultimaVarredura: string | null;
+  ultimaFonteB: string | null;
+  varrendo: boolean;
+  descobrindo: boolean;
+  progresso: { atual: number; total: number; empresa: string } | null; // durante a varredura
 }
 
 // ─── IA (adaptação de currículo) ─────────────────────────────
@@ -116,13 +141,22 @@ export interface ConfigIA {
 }
 
 // ─── Vagas e candidaturas ────────────────────────────────────
-export type StatusVaga = 'encontrada' | 'na_fila' | 'em_andamento' | 'aguardando_pergunta' | 'aguardando_aprovacao' | 'enviada' | 'ensaio' | 'erro' | 'ignorada';
+export type StatusVaga = 'encontrada' | 'na_fila' | 'em_andamento' | 'aguardando_pergunta' | 'aguardando_aprovacao' | 'enviada' | 'ensaio' | 'erro' | 'ignorada' | 'encerrada';
 export type Regime = 'CLT' | 'PJ' | 'ambos' | 'indefinido';
 
 export interface PerguntaExtra {
   rotulo: string;
-  tipo: 'texto' | 'opcoes' | 'arquivo';
+  tipo: 'texto' | 'opcoes' | 'multipla' | 'arquivo'; // multipla = várias opções, resposta guardada como "A | B"
   opcoes?: string[];
+}
+
+/** Estrutura do formulário descoberta na última tentativa (cache/diagnóstico) */
+export interface ResumoFormulario {
+  etapas: number;
+  campos: number;
+  perguntas: number; // perguntas extras respondidas
+  typeform: boolean;
+  incomum: boolean; // campo de tipo desconhecido ou muitas etapas: vale conferir a captura
 }
 
 export type Pendencia =
@@ -138,17 +172,21 @@ export interface Vaga {
   descricao: string;
   requisitos: string;
   regime: Regime;
+  senioridade?: string; // pedida pela vaga (Estágio…Liderança ou Indefinida)
   modelo: 'remoto' | 'hibrido' | 'presencial' | 'indefinido';
   local: string;
   url: string;
   skills: string[];
   camposConhecidos: string[];
   score: number;
+  motivo?: string; // explicação do score (IA) ou resumo léxico
+  adaptado?: { markdown: string; diff: string[]; viaIA: boolean; pdf?: string }; // última adaptação gerada para esta vaga
   status: StatusVaga;
   posicao?: number;
   pendencia?: Pendencia;
   erro?: string;
   captura?: string; // captura de tela (ensaio/erro)
+  formulario?: ResumoFormulario;
   decisaoPreview?: 'adaptado' | 'original';
   respostaTemporaria?: string; // rótulo da pergunta cuja resposta não deve ser guardada
   encontradaEm: string;
@@ -179,6 +217,8 @@ export interface Estado {
   conexoes: Record<string, Conexao>;
   automacao: ConfigAutomacao;
   ia: ConfigIA;
+  empresas: EmpresaInHire[];
+  descoberta: ConfigDescoberta;
   robo: EstadoRobo;
   envios: Envio[];
   candidaturas: Candidatura[];

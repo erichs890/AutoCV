@@ -22,6 +22,9 @@ export const SKILLS: Record<string, string[]> = {
   inglês: ['ingles', 'inglês', 'english'], espanhol: ['espanhol', 'spanish'], comunicação: ['comunicacao', 'comunicação'], 'trabalho em equipe': ['trabalho em equipe', 'equipe'], proatividade: ['proatividade', 'proativo', 'proativa'], organização: ['organizacao', 'organização'], 'resolução de problemas': ['resolucao de problemas', 'resolução de problemas'], 'atenção aos detalhes': ['atencao aos detalhes', 'atenção aos detalhes', 'analitico', 'analítico'],
 };
 
+// Competências comportamentais/genéricas: aparecem em quase toda vaga e quase todo currículo, então pesam pouco no score
+export const SOFT = new Set(['comunicação', 'trabalho em equipe', 'proatividade', 'organização', 'resolução de problemas', 'atenção aos detalhes', 'inglês', 'espanhol', 'pacote office']);
+
 const variantesNormalizadas = Object.entries(SKILLS).map(([canonica, vs]) => [canonica, vs.map(normalizar)] as const);
 
 // Retorna as skills do dicionário presentes no texto (forma canônica), sem repetição

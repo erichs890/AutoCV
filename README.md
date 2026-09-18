@@ -19,15 +19,21 @@ npm run dev    # interface, em outro
 ## Fluxo
 
 1. **Cadastro:** nome, e-mail, telefone, link do LinkedIn e currículo em PDF. O núcleo lê o texto do PDF e monta o *perfil de busca* (área, cargos, competências, senioridade).
-2. **Plataformas → InHire:** o InHire não tem busca geral; cada empresa publica em `empresa.inhire.app/vagas`. Cole os endereços das empresas que quer acompanhar. Não há login nem senha.
-3. **Automação:** escolha o modo (manual ou automático), filtros, ritmo e se o currículo deve ser adaptado por vaga. "Buscar vagas agora" lista as vagas com a compatibilidade calculada.
+2. **Plataformas → InHire:** o InHire não tem busca geral; cada empresa publica em `empresa.inhire.app/vagas`. Ao conectar, o AutoCV carrega uma lista inicial de empresas verificadas (`core/platforms/inhire/seed_empresas_inhire.json`) e passa a revisitá-las periodicamente; você pode adicionar, pausar ou remover empresas e forçar uma varredura. Não há login nem senha.
+3. **Automação:** escolha o modo (manual ou automático), filtros, ritmo e se o currículo deve ser adaptado por vaga. "Buscar vagas agora" lista as vagas com a compatibilidade calculada e o motivo. Com IA configurada, é ela que lê seu currículo e pontua cada vaga; sem IA, o score vem das competências técnicas, do cargo e da área. Em cada vaga, "Currículo adaptado" mostra o que mudaria e gera o PDF.
 4. **Candidatura:** no modo manual, "Quero me candidatar"; no automático, o robô faz sozinho respeitando intervalo, limite diário e janela de horário. Ordem sempre: preencher → anexar → enviar → só então confirmar.
 
-O InHire exige LinkedIn (pedido no cadastro) e pretensão salarial: preencha em Configurações › Meus Dados, ou o robô pergunta na primeira candidatura e guarda. Quando uma vaga faz uma pergunta que você ainda não respondeu, ou quando o currículo adaptado precisa de aprovação, só aquela vaga pausa e a interface pede sua decisão.
+O formulário do InHire muda de vaga para vaga (uma ou duas abas, país/cidade, perguntas de diversidade, e um questionário "uma pergunta por tela" com as perguntas próprias da empresa, que pode vir antes ou depois de criar a candidatura). O robô não supõe um formulário fixo: antes de abrir o navegador ele lê pela API quais perguntas a vaga vai fazer e pede a você as que ainda não tem resposta; depois descobre os campos de cada etapa na própria página, preenche os fixos com seus dados (nome, e-mail, celular, CPF, LinkedIn, cidade, pretensão, CLT/PJ, currículo), responde as demais com as Perguntas Automáticas e avança até o envio. Cada campo preenchido aparece no log.
+
+O InHire exige LinkedIn (pedido no cadastro) e pretensão salarial; algumas vagas pedem cidade e CPF: preencha em Configurações › Meus Dados, ou o robô pergunta na primeira candidatura e guarda. Quando uma vaga faz uma pergunta que você ainda não respondeu, ou quando o currículo adaptado precisa de aprovação, só aquela vaga pausa e a interface pede sua decisão.
+
+## Descoberta de vagas
+
+O robô descobre as empresas sozinho. Ao conectar o InHire ele carrega uma lista inicial verificada e, **uma vez por dia**, consulta o Common Crawl (índice público e gratuito da web, sem chave) por endereços em `*.inhire.app`, confirma cada subdomínio na API do InHire e adiciona os ativos. Em **Configurações › Descoberta de vagas** você ajusta o intervalo de revarredura (padrão 6 h, roda mesmo com o robô parado), liga/desliga a descoberta e, se quiser, complementa com o Google Programmable Search (chave + ID do mecanismo). Em Plataformas dá para "Descobrir empresas agora", "Forçar varredura agora", adicionar, pausar ou remover empresas.
 
 ## Modo ensaio
 
-Vem **ligado** por padrão: o robô abre a vaga, preenche tudo, anexa o currículo, confere se o InHire aceitou os campos, tira uma captura de tela e **não clica em enviar**. Confira as capturas (link "Ver captura de tela" na lista de vagas) e desligue o ensaio em Automação › Segurança quando estiver confiante.
+Vem **ligado** por padrão: o robô abre a vaga, preenche todas as etapas, anexa o currículo, confere se o InHire liberou o botão de envio, tira uma captura de tela e **não clica em enviar**. Como garantia extra, em ensaio o navegador bloqueia as requisições que criariam a candidatura, mesmo que algo fosse clicado por engano. Confira as capturas (link "Ver captura de tela" na lista de vagas) e desligue o ensaio em Automação › Segurança quando estiver confiante.
 
 ## Adaptação do currículo — regra absoluta
 

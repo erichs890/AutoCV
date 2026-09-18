@@ -86,6 +86,29 @@ export async function completar(system: string, usuario: string): Promise<string
   return provedor === 'gemini' ? gemini(modelo, chave, system, usuario) : anthropic(modelo, chave, system, usuario);
 }
 
+const SYSTEM_AVALIACAO = `Você é um recrutador experiente. Recebe um currículo e uma lista de vagas e avalia, para cada vaga, a compatibilidade REAL do candidato de 0 a 100, considerando área de atuação, cargo, senioridade e competências que o currículo de fato comprova. Vaga de área diferente da do candidato = nota baixa (0–20). Mesma área e cargo parecido com as competências principais atendidas = nota alta (70–100).
+Responda SOMENTE com um array JSON, sem comentários, no formato: [{"id":"...","score":0,"motivo":"uma frase curta em português"}]`;
+
+/** Avalia a compatibilidade de várias vagas contra o currículo, em lotes. Devolve só as que o modelo respondeu. */
+export async function avaliarVagas(curriculoMd: string, vagas: { id: string; titulo: string; descricao: string }[], senioridade = ''): Promise<Map<string, { score: number; motivo: string }>> {
+  const resultado = new Map<string, { score: number; motivo: string }>();
+  for (let i = 0; i < vagas.length; i += 6) {
+    const lote = vagas.slice(i, i + 6);
+    const usuario = `${senioridade ? `SENIORIDADE DO CANDIDATO: ${senioridade} (vaga que pede nível acima disso = nota baixa)\n` : ''}CURRÍCULO:\n${curriculoMd.slice(0, 8000)}\n\nVAGAS:\n${lote.map(v => `--- id: ${v.id}\nTÍTULO: ${v.titulo}\n${v.descricao.slice(0, 2500)}`).join('\n\n')}`;
+    const bruto = await completar(SYSTEM_AVALIACAO, usuario);
+    const inicio = bruto.indexOf('[');
+    const fim = bruto.lastIndexOf(']');
+    if (inicio < 0 || fim < inicio) throw new Error('resposta da IA sem JSON');
+    const lista = JSON.parse(bruto.slice(inicio, fim + 1)) as { id?: string; score?: number; motivo?: string }[];
+    for (const item of lista) {
+      const id = String(item.id ?? '');
+      const score = Number(item.score);
+      if (lote.some(v => v.id === id) && Number.isFinite(score)) resultado.set(id, { score: Math.max(0, Math.min(100, Math.round(score))), motivo: String(item.motivo ?? '').slice(0, 200) });
+    }
+  }
+  return resultado;
+}
+
 /** Chamada mínima para validar chave e modelo. */
 export async function testarIA(): Promise<string> {
   const texto = await completar('Responda exatamente com a palavra OK, sem mais nada.', 'Teste de conexão.');

@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, Bot, CheckCircle2, Clock, FileText, ListOrdered, Pause, Play, Plug, Send, Table, Target } from 'lucide-react';
+import { Activity, Bot, CheckCircle2, Clock, FileText, ListOrdered, Pause, Play, Plug, RadarIcon, Send, Table, Target } from 'lucide-react';
 import Panel from '../components/Panel';
 import Badge from '../components/Badge';
 import StatCard from '../components/StatCard';
 import BarChart from '../components/BarChart';
 import { useEstado } from '../estado';
 import { post } from '../api';
-import { STATUS_VAGA, getPlataforma } from '../dados';
+import { STATUS_VAGA, getPlataforma, tempoAtras } from '../dados';
 
 const POR_PAGINA = 10;
 const pg = 'flex h-6 w-[26px] items-center justify-center rounded border text-xs font-bold tabular-nums aria-disabled:cursor-not-allowed aria-disabled:opacity-40';
@@ -21,7 +21,9 @@ export default function Painel() {
   if (!automacao.configurada) return <PrimeirosPassos />;
 
   const hoje = dataCurta(new Date());
-  const compativeis = vagas.filter(v => v.status !== 'ignorada').length;
+  const abertas = vagas.filter(v => v.status !== 'encerrada');
+  const compativeis = abertas.filter(v => v.status !== 'ignorada').length;
+  const empresasAtivas = estado.empresas.filter(e => e.ativo).length;
   const serie = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - 6 + i);
@@ -40,8 +42,18 @@ export default function Painel() {
         <StatCard icon={Send} tom="bg-blue-dark" valor={envios.length} label="Candidaturas" />
         <StatCard icon={Clock} tom="bg-green-dark" valor={envios.filter(e => e.data === hoje).length} label="Envios hoje" />
         <StatCard icon={ListOrdered} tom="bg-orange" valor={fila.length} label="Vagas na fila" />
-        <StatCard icon={Target} tom="bg-purple" valor={compativeis} label="Vagas compatíveis" nota={estado.ultimaBusca ? `última busca ${new Date(estado.ultimaBusca).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : undefined} />
+        <StatCard icon={Target} tom="bg-purple" valor={compativeis} label="Vagas compatíveis" nota={`${abertas.length} vagas ativas no total`} />
       </section>
+      <p className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-soft max-md:-mt-1">
+        <span className="inline-flex items-center gap-1">
+          <RadarIcon size={12} aria-hidden />
+          Última varredura {tempoAtras(estado.descoberta.ultimaVarredura)}
+          {estado.descoberta.varrendo && ' (em andamento)'}
+        </span>
+        <span>· {empresasAtivas} empresas monitoradas</span>
+        <span>· {abertas.length} vagas ativas</span>
+        <span>· próxima a cada {estado.descoberta.intervaloHoras} h</span>
+      </p>
 
       <div className="grid h-[380px] grid-cols-[1fr_330px] gap-4 max-lg:grid-cols-[1fr_300px] max-md:h-auto max-md:grid-cols-1">
         <Panel icon={Activity} title="Atividade do Robô" className="max-md:hidden" bodyClassName="flex flex-col gap-2.5 p-3.5">

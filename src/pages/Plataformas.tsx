@@ -1,49 +1,49 @@
 import { useState, type FormEvent } from 'react';
-import { Building2, Plug, Plus, Trash2, Unplug } from 'lucide-react';
-import Modal from '../components/Modal';
+import { Building2, Plug, Plus, RadarIcon, Search, Trash2, Unplug } from 'lucide-react';
+import Panel from '../components/Panel';
 import { useEstado } from '../estado';
-import { PLATAFORMAS, extrairTenant } from '../dados';
+import { api, post } from '../api';
+import { PLATAFORMAS, tempoAtras } from '../dados';
 
 export default function Plataformas() {
   const { estado, salvar, registrar } = useEstado();
-  const [aberto, setAberto] = useState(false);
-  const [tenants, setTenants] = useState<string[]>([]);
   const [erro, setErro] = useState('');
+  const [adicionando, setAdicionando] = useState(false);
 
   const conectadas = Object.keys(estado.conexoes).length;
   const conexaoInhire = estado.conexoes.inhire;
+  const ativas = estado.empresas.filter(e => e.ativo);
+  const vagasAtivas = estado.vagas.filter(v => v.plataforma === 'inhire' && !['encerrada'].includes(v.status)).length;
+  const vagasPorEmpresa = (sub: string) => estado.vagas.filter(v => v.tenant === sub && v.status !== 'encerrada').length;
 
-  function abrir() {
-    setTenants(estado.automacao.tenants);
-    setErro('');
-    setAberto(true);
-  }
-
-  function adicionar(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const campo = e.currentTarget.elements.namedItem('empresa') as HTMLInputElement;
-    const t = extrairTenant(campo.value);
-    if (!t) return setErro('Informe o nome da empresa como aparece em <empresa>.inhire.app.');
-    if (tenants.includes(t)) return setErro('Essa empresa já está na lista.');
-    setTenants([...tenants, t]);
-    setErro('');
-    campo.value = '';
-  }
-
-  async function confirmar() {
-    if (!tenants.length) return setErro('Adicione pelo menos uma empresa.');
+  async function conectar() {
     await salvar({
       conexoes: { ...estado.conexoes, inhire: { conectadaEm: conexaoInhire?.conectadaEm ?? new Date().toISOString() } },
-      automacao: { ...estado.automacao, tenants, plataformas: Array.from(new Set([...estado.automacao.plataformas, 'inhire'])) },
+      automacao: { ...estado.automacao, plataformas: Array.from(new Set([...estado.automacao.plataformas, 'inhire'])) },
     });
-    registrar('sucesso', `InHire conectado: ${tenants.length} empresa(s) para acompanhar.`);
-    setAberto(false);
+    const { total } = await post<{ total: number }>('/empresas/seed');
+    registrar('sucesso', `InHire conectado: ${total} empresa(s) monitoradas.`);
   }
 
   async function desconectar() {
     const { inhire: _fora, ...resto } = estado.conexoes;
-    await salvar({ conexoes: resto, automacao: { ...estado.automacao, tenants: [], plataformas: estado.automacao.plataformas.filter(p => p !== 'inhire') } });
-    registrar('alerta', 'InHire desconectado.');
+    await salvar({ conexoes: resto, automacao: { ...estado.automacao, plataformas: estado.automacao.plataformas.filter(p => p !== 'inhire') } });
+    registrar('alerta', 'InHire desconectado (a lista de empresas foi mantida).');
+  }
+
+  async function adicionar(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const campo = e.currentTarget.elements.namedItem('empresa') as HTMLInputElement;
+    setAdicionando(true);
+    setErro('');
+    try {
+      await post('/empresas', { entrada: campo.value });
+      campo.value = '';
+    } catch (err) {
+      setErro((err as Error).message);
+    } finally {
+      setAdicionando(false);
+    }
   }
 
   return (
@@ -66,11 +66,7 @@ export default function Plataformas() {
                 </span>
                 <div className="flex flex-col items-start gap-1">
                   <h3 className="text-[15px] font-bold">{p.nome}</h3>
-                  <span
-                    className={`inline-flex items-center gap-[5px] rounded-[9px] px-2 py-0.5 text-[10px] font-bold ${
-                      conexao ? 'bg-green-deep text-white' : 'border border-panel-border bg-page-bg text-ink'
-                    }`}
-                  >
+                  <span className={`inline-flex items-center gap-[5px] rounded-[9px] px-2 py-0.5 text-[10px] font-bold ${conexao ? 'bg-green-deep text-white' : 'border border-panel-border bg-page-bg text-ink'}`}>
                     <span aria-hidden className="size-1.5 rounded-full bg-current" />
                     {conexao ? 'Conectado' : p.disponivel ? 'Não conectado' : 'Indisponível'}
                   </span>
@@ -79,24 +75,18 @@ export default function Plataformas() {
               <p className="text-xs text-ink-soft">
                 {p.id === 'inhire'
                   ? conexao
-                    ? `${estado.automacao.tenants.length} empresa(s): ${estado.automacao.tenants.join(', ')}`
-                    : 'Páginas de vagas públicas, sem login. Você escolhe as empresas que quer acompanhar.'
+                    ? `${ativas.length} empresa(s) monitoradas · ${vagasAtivas} vagas ativas`
+                    : 'Páginas de vagas públicas, sem login. O robô descobre as empresas que usam InHire e acompanha as vagas delas.'
                   : 'Integração ainda não implementada.'}
               </p>
-              <div className="mt-auto grid grid-cols-2 gap-2">
+              <div className="mt-auto">
                 {p.id === 'inhire' && conexao ? (
-                  <>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={abrir}>
-                      <Building2 size={14} aria-hidden />
-                      Empresas
-                    </button>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={desconectar}>
-                      <Unplug size={14} aria-hidden />
-                      Desconectar
-                    </button>
-                  </>
+                  <button type="button" className="btn btn-secondary btn-sm w-full" onClick={desconectar}>
+                    <Unplug size={14} aria-hidden />
+                    Desconectar
+                  </button>
                 ) : (
-                  <button type="button" className="btn btn-success btn-sm col-span-2" disabled={!p.disponivel} onClick={abrir}>
+                  <button type="button" className="btn btn-success btn-sm w-full" disabled={!p.disponivel} onClick={conectar}>
                     <Plug size={14} aria-hidden />
                     {p.disponivel ? 'Conectar' : 'Indisponível'}
                     <span className="sr-only"> {p.nome}</span>
@@ -108,51 +98,106 @@ export default function Plataformas() {
         })}
       </ul>
 
-      <Modal
-        aberto={aberto}
-        onFechar={() => setAberto(false)}
-        icon={Plug}
-        titulo="Conectar plataforma — InHire"
-        rodape={
-          <>
-            <button type="button" className="btn btn-secondary" onClick={() => setAberto(false)}>
-              Cancelar
-            </button>
-            <button type="button" className="btn btn-primary" onClick={confirmar}>
-              <Plug size={16} aria-hidden />
-              Salvar empresas
-            </button>
-          </>
-        }
-      >
-        <p className="text-xs text-ink-soft">
-          O InHire não tem uma busca geral: cada empresa publica as vagas em <code className="font-mono">empresa.inhire.app/vagas</code>. Cole aqui o endereço (ou só o nome) das empresas que
-          quer acompanhar.
-        </p>
-        <form onSubmit={adicionar} className="flex gap-2">
-          <input name="empresa" type="text" placeholder="ex.: vagasbyintera ou https://vagasbyintera.inhire.app/vagas" aria-label="Empresa no InHire" className="field flex-1" />
-          <button type="submit" className="btn btn-secondary">
-            <Plus size={16} aria-hidden />
-            Adicionar
-          </button>
-        </form>
-        {erro && (
-          <p role="alert" className="text-xs font-bold text-orange-deep">
-            {erro}
+      {conexaoInhire && (
+        <Panel
+          icon={Building2}
+          title="Empresas monitoradas no InHire"
+          tone="purple"
+          aside={`última varredura ${tempoAtras(estado.descoberta.ultimaVarredura)} · ${ativas.length} ativas · ${vagasAtivas} vagas`}
+          bodyClassName="flex flex-col gap-3 p-3.5"
+        >
+          <p className="text-xs text-ink-soft">
+            O InHire não tem busca geral: cada empresa publica em <code className="font-mono">empresa.inhire.app/vagas</code>. O robô descobre as empresas sozinho — começa com uma lista inicial verificada e,
+            uma vez por dia, procura novas em índices públicos da web e confirma cada uma na API do InHire. Depois revisita todas a cada {estado.descoberta.intervaloHoras} h. Se souber de alguma que
+            ele ainda não achou, cole o endereço.
           </p>
-        )}
-        <ul className="flex flex-col gap-1.5">
-          {tenants.map(t => (
-            <li key={t} className="flex items-center gap-2 rounded-md border border-panel-border px-2.5 py-1.5 text-xs">
-              <span className="flex-1 font-mono">{t}.inhire.app</span>
-              <button type="button" aria-label={`Remover ${t}`} onClick={() => setTenants(tenants.filter(x => x !== t))} className="btn btn-secondary size-6 p-0 text-orange-deep">
-                <Trash2 size={13} aria-hidden />
+          <div className="flex flex-wrap items-center gap-2">
+            <form onSubmit={adicionar} className="flex min-w-[320px] flex-1 gap-2">
+              <input name="empresa" type="text" placeholder="ex.: db1 ou https://db1.inhire.app/vagas" aria-label="Adicionar empresa InHire" className="field flex-1" />
+              <button type="submit" className="btn btn-secondary" disabled={adicionando}>
+                <Plus size={16} aria-hidden />
+                {adicionando ? 'Conferindo...' : 'Adicionar'}
               </button>
-            </li>
-          ))}
-          {tenants.length === 0 && <li className="text-xs text-ink-soft">Nenhuma empresa ainda.</li>}
-        </ul>
-      </Modal>
+            </form>
+            <button type="button" className="btn btn-secondary" disabled={estado.descoberta.descobrindo} onClick={() => api('/descoberta/buscar', { method: 'POST' })}>
+              <Search size={16} aria-hidden />
+              {estado.descoberta.descobrindo ? 'Procurando empresas...' : 'Descobrir empresas agora'}
+            </button>
+            <button type="button" className="btn btn-primary" disabled={estado.descoberta.varrendo} onClick={() => api('/buscar', { method: 'POST' })}>
+              <RadarIcon size={16} aria-hidden />
+              {estado.descoberta.varrendo ? 'Varrendo...' : 'Forçar varredura agora'}
+            </button>
+          </div>
+          {(estado.descoberta.descobrindo || estado.descoberta.varrendo) && (
+            <div className="rounded-lg border border-amber bg-amber/15 p-2.5 text-[11px] text-amber-ink">
+              {estado.descoberta.descobrindo && <p>Procurando empresas em índices públicos e confirmando cada uma na API do InHire — leva alguns minutos.</p>}
+              {estado.descoberta.varrendo && estado.descoberta.progresso && (
+                <>
+                  <p className="font-bold">
+                    Varrendo {estado.descoberta.progresso.atual} de {estado.descoberta.progresso.total}: {estado.descoberta.progresso.empresa}
+                  </p>
+                  <div role="progressbar" aria-valuemin={0} aria-valuemax={estado.descoberta.progresso.total} aria-valuenow={estado.descoberta.progresso.atual} className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-amber/40">
+                    <div className="h-full bg-amber-ink" style={{ width: `${(estado.descoberta.progresso.atual / estado.descoberta.progresso.total) * 100}%` }} />
+                  </div>
+                  <p className="mt-1">Cada vaga nova é lida uma vez; as próximas varreduras são rápidas. As vagas já aparecem em Automação conforme chegam.</p>
+                </>
+              )}
+            </div>
+          )}
+          {erro && (
+            <p role="alert" className="text-xs font-bold text-orange-deep">
+              {erro}
+            </p>
+          )}
+          {estado.empresas.length === 0 ? (
+            <p className="py-3 text-center text-xs text-ink-soft">Nenhuma empresa ainda.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] border-collapse text-left text-xs">
+                <thead className="text-[11px]">
+                  <tr className="h-[30px] border-b border-panel-border">
+                    <th scope="col" className="px-2 font-bold">Empresa</th>
+                    <th scope="col" className="font-bold">Subdomínio</th>
+                    <th scope="col" className="w-[110px] font-bold">Vagas ativas</th>
+                    <th scope="col" className="w-[130px] font-bold">Última verificação</th>
+                    <th scope="col" className="w-[90px] font-bold">Origem</th>
+                    <th scope="col" className="w-[170px] pr-2 text-right font-bold">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {estado.empresas.map(e => (
+                    <tr key={e.subdominio} className={`h-9 border-b border-panel-border/60 last:border-0 ${e.ativo ? '' : 'text-ink-soft'}`}>
+                      <td className="px-2 font-bold">{e.nome || e.subdominio}</td>
+                      <td>
+                        <a href={e.urlVagas} target="_blank" rel="noreferrer" className="font-mono text-blue-dark hover:underline">
+                          {e.subdominio}.inhire.app
+                        </a>
+                      </td>
+                      <td className="tabular-nums">
+                        {vagasPorEmpresa(e.subdominio)}
+                        {e.totalVagas !== vagasPorEmpresa(e.subdominio) && <span className="text-ink-soft"> / {e.totalVagas} publicadas</span>}
+                      </td>
+                      <td className="text-ink-soft">
+                        {tempoAtras(e.ultimaVerificacao)}
+                        {e.falhas > 0 && <span className="text-orange-deep"> · {e.falhas} falha(s)</span>}
+                      </td>
+                      <td className="text-ink-soft">{{ seed: 'lista inicial', manual: 'você', busca: 'busca' }[e.origem]}</td>
+                      <td className="pr-2 text-right">
+                        <button type="button" className="btn btn-secondary btn-sm mr-1.5" onClick={() => post('/empresas/ativar', { subdominio: e.subdominio, ativo: !e.ativo })}>
+                          {e.ativo ? 'Pausar' : 'Reativar'}
+                        </button>
+                        <button type="button" aria-label={`Remover ${e.nome || e.subdominio}`} className="btn btn-secondary btn-sm px-2 text-orange-deep" onClick={() => api(`/empresas?subdominio=${encodeURIComponent(e.subdominio)}`, { method: 'DELETE' })}>
+                          <Trash2 size={13} aria-hidden />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+      )}
     </div>
   );
 }

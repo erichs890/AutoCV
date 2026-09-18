@@ -15,6 +15,7 @@ export const PLATAFORMAS: Plataforma[] = [
 
 export const getPlataforma = (id: string): Plataforma => PLATAFORMAS.find(p => p.id === id) ?? PLATAFORMAS[0];
 
+export const NIVEIS = ['Estágio', 'Júnior', 'Pleno', 'Sênior', 'Liderança'];
 export const AREAS = ['Tecnologia da Informação', 'Dados e Analytics', 'Suporte e Infraestrutura', 'Comercial e Vendas', 'Financeiro e Contábil', 'Recursos Humanos', 'Marketing', 'Administrativo'];
 export const REGIMES = [
   ['remoto', 'Remoto'],
@@ -32,6 +33,17 @@ export const STATUS_VAGA: Record<StatusVaga, { rotulo: string; classe: string }>
   ensaio: { rotulo: 'Ensaio', classe: 'bg-purple text-white' },
   erro: { rotulo: 'Erro', classe: 'bg-orange-deep text-white' },
   ignorada: { rotulo: 'Baixa compatibilidade', classe: 'border border-panel-border bg-page-bg text-ink-soft' },
+  encerrada: { rotulo: 'Encerrada', classe: 'border border-panel-border bg-page-bg text-ink-soft line-through' },
+};
+
+export const tempoAtras = (iso: string | null) => {
+  if (!iso) return 'nunca';
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return 'agora';
+  if (min < 60) return `há ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `há ${h} h`;
+  return `há ${Math.round(h / 24)} dias`;
 };
 
 export const MODELO = { remoto: 'Remoto', hibrido: 'Híbrido', presencial: 'Presencial', indefinido: 'Modelo não informado' } as const;

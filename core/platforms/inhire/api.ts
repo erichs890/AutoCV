@@ -6,8 +6,24 @@ export interface ResumoVagaInHire {
   jobId: string;
   displayName: string;
   status: string;
+  careerPageId?: string; // 'default' ou o nome de uma página de carreira própria (entra na URL)
   workplaceType?: string; // Remote | Hybrid | On-site
   location?: string;
+}
+
+export interface ConfigTenant {
+  id: string;
+  name: string;
+  status: string; // active | inactive
+  publicCapabilities?: string[]; // "requireCustomFormCompletion" = questionário antes de criar o talento (fluxo condicional)
+}
+
+/** Configuração pública da empresa; null se o subdomínio não existe (404). */
+export async function configTenant(tenant: string): Promise<ConfigTenant | null> {
+  const r = await fetch(`${BASE}/tenants/public/config/${encodeURIComponent(tenant)}`, { headers: { 'x-inhire-client': 'web-inhire', accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`InHire ${r.status} ao consultar ${tenant}`);
+  return (await r.json()) as ConfigTenant;
 }
 
 export interface DetalheVagaInHire extends ResumoVagaInHire {
@@ -16,6 +32,7 @@ export interface DetalheVagaInHire extends ResumoVagaInHire {
   contractType: string[]; // ex.: ["CLT"], ["PJ"], ["CLT","PJ"] ou []
   settings?: { fields?: string[]; requiredFields?: string[] };
   privacyPolicyUrl?: string;
+  diversity?: { questions?: unknown[] }; // aba "2. Diversidade" (schema.ts interpreta)
 }
 
 async function get<T>(tenant: string, caminho: string): Promise<T> {
@@ -43,7 +60,9 @@ export const slug = (s: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
 
-export const urlVaga = (tenant: string, jobId: string, titulo: string) => `https://${tenant}.inhire.app/vagas/${jobId}/${slug(titulo)}`;
+// Página de carreira própria entra no caminho: eurosolucoes.inhire.app/fitcard-tech/vagas/<id>/<slug>
+export const urlVaga = (tenant: string, jobId: string, titulo: string, careerPageId = 'default') =>
+  `https://${tenant}.inhire.app/${careerPageId && careerPageId !== 'default' ? `${careerPageId}/` : ''}vagas/${jobId}/${slug(titulo)}`;
 
 export function htmlParaTexto(html: string): string {
   return html

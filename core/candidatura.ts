@@ -27,10 +27,12 @@ export function respostaSalva(pergunta: PerguntaExtra): string | null {
     if (s >= 0.55 && (!melhor || s > melhor.s)) melhor = { resposta: p.resposta.trim(), s };
   }
   if (!melhor) return null;
-  if (pergunta.tipo === 'opcoes' && pergunta.opcoes?.length) {
-    // Resposta salva precisa bater com uma das opções da vaga
-    const opcao = pergunta.opcoes.find(o => similaridade(o, melhor!.resposta) >= 0.7);
-    return opcao ?? null;
+  if ((pergunta.tipo === 'opcoes' || pergunta.tipo === 'multipla') && pergunta.opcoes?.length) {
+    // Resposta salva precisa bater com as opções da vaga (múltipla: "A | B")
+    const casar = (r: string) => pergunta.opcoes!.find(o => similaridade(o, r) >= 0.7) ?? null;
+    if (pergunta.tipo === 'opcoes') return casar(melhor.resposta);
+    const casadas = melhor.resposta.split(/\s*\|\s*|\s*;\s*/).map(casar).filter((o): o is string => o !== null);
+    return casadas.length ? [...new Set(casadas)].join(' | ') : null;
   }
   return melhor.resposta;
 }
@@ -48,8 +50,14 @@ function pendente(vaga: Vaga, pendencia: Pendencia) {
   emitir({ tipo: 'aviso', nivel: 'info', msg: pendencia.tipo === 'pergunta' ? `O InHire perguntou: ${pendencia.pergunta.rotulo}` : `Currículo adaptado pronto para revisão: ${vaga.titulo}` });
 }
 
-/** IA (se configurada) com validação de entidades; qualquer problema → cai para a adaptação por regras. */
-async function gerarAdaptacao(original: string, vaga: Vaga): Promise<{ markdown: string; diff: string[]; viaIA: boolean }> {
+/** IA (se configurada) com validação de entidades; qualquer problema → cai para a adaptação por regras. Guarda o resultado na vaga. */
+export async function gerarAdaptacao(original: string, vaga: Vaga): Promise<{ markdown: string; diff: string[]; viaIA: boolean }> {
+  const r = await gerarAdaptacaoBruta(original, vaga);
+  vagas.atualizar(vaga.id, { adaptado: { markdown: r.markdown, diff: r.diff, viaIA: r.viaIA, pdf: vaga.adaptado?.pdf } });
+  return r;
+}
+
+async function gerarAdaptacaoBruta(original: string, vaga: Vaga): Promise<{ markdown: string; diff: string[]; viaIA: boolean }> {
   if (iaAtiva()) {
     const { provedor, modelo } = lerIA();
     try {
@@ -92,6 +100,15 @@ export async function executarCandidatura(id: string) {
   if (exige('linkedin') && !perfil.linkedin?.trim()) return pendente(vaga, { tipo: 'pergunta', pergunta: { rotulo: PERGUNTA_LINKEDIN, tipo: 'texto' } });
   if (exige('salary') && !perfil.pretensao?.trim()) return pendente(vaga, { tipo: 'pergunta', pergunta: { rotulo: PERGUNTA_PRETENSAO, tipo: 'texto' } });
 
+  // Perguntas que a vaga com certeza vai fazer (schema via API): resolve antes de abrir o navegador ou adaptar o currículo
+  if (adapter.perguntasPrevias && vaga.status !== 'em_andamento') {
+    try {
+      for (const p of await adapter.perguntasPrevias(vaga)) if (respostaSalva(p) === null) return pendente(vaga, { tipo: 'pergunta', pergunta: p });
+    } catch (e) {
+      registrar('alerta', `Não consegui ler as perguntas de "${vaga.titulo}" pela API (${(e as Error).message}); vou descobrir no formulário.`);
+    }
+  }
+
   const regime = decidirRegime(vaga);
   if (regime === 'perguntar') {
     pendente(vaga, { tipo: 'pergunta', pergunta: { rotulo: `${PERGUNTA_REGIME} para "${vaga.titulo}" (a vaga ${vaga.regime === 'ambos' ? 'aceita CLT e PJ' : 'não informou o regime'})`, tipo: 'opcoes', opcoes: ['CLT', 'PJ'] } });
@@ -120,6 +137,7 @@ export async function executarCandidatura(id: string) {
       }
       curriculoPdf = join(DIRS.gerados, `${vaga.id.replace(/[^a-z0-9]/gi, '_')}.pdf`);
       await markdownParaPdf(adaptacao.markdown, curriculoPdf, cfg.mostrarNavegador);
+      vagas.atualizar(id, { adaptado: { markdown: adaptacao.markdown, diff: adaptacao.diff, viaIA: adaptacao.viaIA, pdf: curriculoPdf } });
       versao = 'adaptada';
       registrar('sucesso', `Currículo adaptado para "${vaga.titulo}" (${adaptacao.diff.length} mudança(s), nada inventado).`);
     }
@@ -133,6 +151,8 @@ export async function executarCandidatura(id: string) {
       email: perfil.email,
       celular: perfil.telefone,
       linkedin: perfil.linkedin ?? '',
+      cidade: perfil.cidade ?? '',
+      cpf: perfil.cpf ?? '',
       pretensao: perfil.pretensao ?? '',
       regime,
       curriculoPdf,
@@ -145,6 +165,7 @@ export async function executarCandidatura(id: string) {
 
   // 3) Só depois do resultado real: confirmação ou erro
   if (resultado.status === 'pergunta') return pendente(vaga, { tipo: 'pergunta', pergunta: resultado.pergunta });
+  if (resultado.formulario) vagas.atualizar(id, { formulario: resultado.formulario });
   if (resultado.status === 'erro') {
     vagas.atualizar(id, { status: 'erro', erro: resultado.motivo, captura: resultado.captura });
     registrar('erro', `Falha em "${vaga.titulo}" (${vaga.empresa}): ${resultado.motivo}`);

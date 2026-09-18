@@ -1,13 +1,13 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ExternalLink, FileText, Hourglass, ListOrdered, MessageCircleQuestion, Pause, Play, Search, Send, SlidersHorizontal, Sparkles, Target, Terminal, X } from 'lucide-react';
+import { Check, CheckCircle2, ExternalLink, FileDown, FileText, Hourglass, ListOrdered, MessageCircleQuestion, Pause, Play, RefreshCw, Search, Send, SlidersHorizontal, Sparkles, Target, Terminal, X } from 'lucide-react';
 import type { LinhaLog, Vaga } from '../types';
 import Panel from '../components/Panel';
 import Modal from '../components/Modal';
 import { statusRobo } from '../components/Sidebar';
 import { useEstado, type ConfigAutomacao } from '../estado';
 import { post, urlArquivo } from '../api';
-import { AREAS, MODELO, PLATAFORMAS, REGIMES, REGIME_VAGA, STATUS_VAGA, formatarTamanho } from '../dados';
+import { AREAS, MODELO, NIVEIS, PLATAFORMAS, REGIMES, REGIME_VAGA, STATUS_VAGA, formatarTamanho } from '../dados';
 
 const SALARIO = { min: 1000, max: 15000, passo: 500 };
 const titulos = { ativo: 'Robô ligado', pausado: 'Robô parado', erro: 'Robô com erro' };
@@ -21,21 +21,42 @@ const cartao = 'rounded-[7px] border border-panel-border hover:border-ink-soft h
 export default function Automacao() {
   const { estado, salvar, registrar } = useEstado();
   const [cfg, setCfg] = useState<ConfigAutomacao>(estado.automacao);
+  const [base, setBase] = useState<ConfigAutomacao>(estado.automacao); // última configuração vinda do núcleo
+  const sujo = JSON.stringify(cfg) !== JSON.stringify(base);
+  useEffect(() => {
+    // Configuração mudou no núcleo (outra aba, pendência que fixou o regime...): acompanha se não houver rascunho
+    if (JSON.stringify(estado.automacao) === JSON.stringify(base)) return;
+    setBase(estado.automacao);
+    if (!sujo) setCfg(estado.automacao);
+  }, [estado.automacao]); // eslint-disable-line react-hooks/exhaustive-deps
   const [buscando, setBuscando] = useState(false);
+  const [adaptacaoDe, setAdaptacaoDe] = useState<string | null>(null); // vaga cujo currículo adaptado está aberto
+  const [mostrarIgnoradas, setMostrarIgnoradas] = useState(false);
   const set = (mudanca: Partial<ConfigAutomacao>) => setCfg(c => ({ ...c, ...mudanca }));
 
   const conectadas = PLATAFORMAS.filter(p => estado.conexoes[p.id]);
+  const empresasAtivas = estado.empresas.filter(e => e.ativo).length;
   const ativo = estado.robo === 'ativo';
   const pendente = estado.vagas.find(v => v.pendencia);
-  const encontradas = estado.vagas.filter(v => v.status !== 'ignorada');
-  const ignoradas = estado.vagas.length - encontradas.length;
+  const abertas = estado.vagas.filter(v => v.status !== 'encerrada');
+  const encontradas = abertas.filter(v => v.status !== 'ignorada');
+  const ignoradas = abertas.length - encontradas.length;
+  const listadas = mostrarIgnoradas ? [...abertas].sort((a, b) => b.score - a.score) : encontradas;
 
-  async function guardar(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    await salvar({ automacao: { ...cfg, configurada: true } });
+  async function guardar(ligar: boolean) {
+    const form = document.getElementById('form-automacao') as HTMLFormElement | null;
+    if (form && !form.reportValidity()) return; // campo inválido (ex.: compatibilidade > 100): o navegador aponta qual
+    const nova = { ...cfg, configurada: true };
+    await salvar({ automacao: nova });
+    setBase(nova);
+    setCfg(nova);
     registrar('sucesso', `Configuração salva: modo ${cfg.modo === 'automatico' ? 'automático' : 'manual'}, ${cfg.adaptar ? 'com' : 'sem'} adaptação de currículo, ensaio ${cfg.ensaio ? 'ligado' : 'desligado'}.`);
-    if (!ativo) await post('/robo', { ligar: true });
+    if (ligar && !ativo) await post('/robo', { ligar: true });
   }
+  const aoEnviar = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    void guardar(false);
+  };
 
   async function buscar() {
     setBuscando(true);
@@ -57,13 +78,13 @@ export default function Automacao() {
           <div role="status" className="min-w-[180px] flex-1">
             <p className={`text-base font-bold ${ativo ? 'text-aqua' : ''}`}>{titulos[estado.robo]}</p>
             <p className="text-xs text-white/70">
-              {estado.automacao.configurada ? `Modo ${estado.automacao.modo === 'automatico' ? 'automático' : 'manual'} · ${estado.automacao.tenants.length} empresa(s) do InHire` : 'Ainda não configurado'}
+              {estado.automacao.configurada ? `Modo ${estado.automacao.modo === 'automatico' ? 'automático' : 'manual'} · ${empresasAtivas} empresa(s) do InHire` : 'Ainda não configurado'}
               {estado.automacao.ensaio && ' · modo ensaio (nada é enviado)'}
             </p>
           </div>
-          <button type="button" className="btn btn-secondary" disabled={buscando} onClick={buscar}>
+          <button type="button" className="btn btn-secondary" disabled={buscando || estado.descoberta.varrendo} onClick={buscar}>
             <Search size={16} aria-hidden />
-            {buscando ? 'Buscando...' : 'Buscar vagas agora'}
+            {estado.descoberta.varrendo ? 'Varrendo...' : 'Buscar vagas agora'}
           </button>
           {ativo ? (
             <button type="button" className="btn btn-danger" onClick={() => post('/robo', { ligar: false })}>
@@ -71,9 +92,9 @@ export default function Automacao() {
               Pausar
             </button>
           ) : (
-            <button type="submit" form="form-automacao" className="btn btn-success">
+            <button type="button" className="btn btn-success" onClick={() => guardar(true)}>
               <Play size={16} aria-hidden />
-              {estado.automacao.configurada ? 'Salvar e ligar' : 'Configurar e ligar'}
+              {estado.automacao.configurada ? (sujo ? 'Salvar e ligar' : 'Ligar') : 'Configurar e ligar'}
             </button>
           )}
         </section>
@@ -86,21 +107,30 @@ export default function Automacao() {
         )}
 
         <Panel icon={Target} title="Vagas encontradas" tone="purple" aside={encontradas.length ? `${encontradas.length} compatíveis${ignoradas ? ` · ${ignoradas} abaixo do mínimo` : ''}` : undefined} bodyClassName="p-0">
-          {encontradas.length === 0 ? (
+          {listadas.length === 0 ? (
             <p className="p-5 text-center text-xs text-ink-soft">
-              {estado.automacao.tenants.length ? 'Nenhuma vaga ainda. Clique em "Buscar vagas agora".' : 'Conecte o InHire e escolha as empresas em Plataformas para buscar vagas.'}
+              {empresasAtivas
+                ? estado.vagas.length
+                  ? `Nenhuma vaga chegou aos ${estado.automacao.scoreMinimo}% de compatibilidade mínima.`
+                  : 'Nenhuma vaga ainda. Clique em "Buscar vagas agora".'
+                : 'Conecte o InHire e escolha as empresas em Plataformas para buscar vagas.'}
             </p>
           ) : (
             <ul className="divide-y divide-panel-border">
-              {encontradas.map(v => (
-                <VagaItem key={v.id} vaga={v} manual={estado.automacao.modo === 'manual'} />
+              {listadas.map(v => (
+                <VagaItem key={v.id} vaga={v} manual={estado.automacao.modo === 'manual'} pdfEnviado={estado.candidaturas.find(c => c.vagaId === v.id)?.curriculo} onVerAdaptacao={() => setAdaptacaoDe(v.id)} />
               ))}
             </ul>
+          )}
+          {ignoradas > 0 && (
+            <button type="button" className="w-full border-t border-panel-border px-3.5 py-2 text-left text-[11px] font-bold text-ink-soft hover:bg-page-bg" onClick={() => setMostrarIgnoradas(m => !m)}>
+              {mostrarIgnoradas ? 'Ocultar' : 'Mostrar'} {ignoradas} vaga(s) abaixo de {estado.automacao.scoreMinimo}% de compatibilidade
+            </button>
           )}
         </Panel>
 
         <Panel icon={SlidersHorizontal} title="Configuração da automação" bodyClassName="p-3.5">
-          <form id="form-automacao" className="flex flex-col gap-4" onSubmit={guardar}>
+          <form id="form-automacao" className="flex flex-col gap-4" onSubmit={aoEnviar}>
             <Passo n={1} titulo="Modo de operação">
               <div className="grid grid-cols-2 gap-2.5 max-md:grid-cols-1">
                 <label className={`flex items-start gap-2.5 p-3 ${cartao}`}>
@@ -135,7 +165,7 @@ export default function Automacao() {
                       <input type="checkbox" checked={cfg.plataformas.includes(p.id)} onChange={() => set({ plataformas: alternar(cfg.plataformas, p.id) })} className="size-[17px] shrink-0" />
                       <span>
                         <span className="block text-xs font-bold">{p.nome}</span>
-                        <span className="block text-[10px] text-ink-soft">{cfg.tenants.length} empresa(s)</span>
+                        <span className="block text-[10px] text-ink-soft">{empresasAtivas} empresa(s) monitoradas</span>
                       </span>
                     </label>
                   ))}
@@ -177,10 +207,30 @@ export default function Automacao() {
                   <input value={cfg.cargo} onChange={e => set({ cargo: e.target.value })} placeholder="Ex.: Desenvolvedor(a) Back-end" className="field" />
                 </label>
                 <label>
+                  <span className="label">Senioridade</span>
+                  <select value={cfg.senioridade} onChange={e => set({ senioridade: e.target.value })} className="field">
+                    <option value="">Do currículo{estado.curriculos[0]?.perfilBusca ? ` (${estado.curriculos[0].perfilBusca.senioridade})` : ''}</option>
+                    {NIVEIS.map(n => (
+                      <option key={n}>{n}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
                   <span className="label">Compatibilidade mínima (%)</span>
                   <input type="number" min={0} max={100} value={cfg.scoreMinimo} onChange={e => set({ scoreMinimo: +e.target.value })} className="field tabular-nums" />
                 </label>
               </div>
+              <p className="mt-2 text-[11px] text-ink-soft">
+                Vagas presenciais são comparadas com a sua cidade{' '}
+                {estado.perfil?.cidade ? (
+                  <>({estado.perfil.cidade})</>
+                ) : (
+                  <>
+                    — <Link to="/configuracoes" className="text-blue-dark hover:underline">preencha Cidade / Estado em Configurações</Link>
+                  </>
+                )}
+                : outra cidade do mesmo estado perde 40%, outro estado perde 80%. Remotas e híbridas não mudam.
+              </p>
               <div className="mt-3 flex flex-wrap items-end gap-3.5">
                 <div className="min-w-[260px] flex-1">
                   <div className="mb-1.5 flex">
@@ -293,6 +343,18 @@ export default function Automacao() {
                 </label>
               </div>
             </Passo>
+            <div className="sticky bottom-0 flex items-center gap-2.5 rounded-lg border border-panel-border bg-panel px-3.5 py-3">
+              <p role="status" className={`flex-1 text-xs ${sujo ? 'font-bold text-amber-ink' : 'text-ink-soft'}`}>
+                {sujo ? 'Você tem alterações não salvas.' : 'Configuração salva. As mudanças valem para as próximas candidaturas.'}
+              </p>
+              <button type="button" className="btn btn-secondary" disabled={!sujo} onClick={() => setCfg(base)}>
+                Descartar
+              </button>
+              <button type="submit" className="btn btn-success" disabled={!sujo}>
+                <Check size={16} aria-hidden />
+                Salvar configuração
+              </button>
+            </div>
           </form>
         </Panel>
       </div>
@@ -340,11 +402,12 @@ export default function Automacao() {
       </div>
 
       {pendente && <Pendencia vaga={pendente} />}
+      {adaptacaoDe && <Adaptacao vaga={estado.vagas.find(v => v.id === adaptacaoDe)!} onFechar={() => setAdaptacaoDe(null)} />}
     </div>
   );
 }
 
-function VagaItem({ vaga: v, manual }: { vaga: Vaga; manual: boolean }) {
+function VagaItem({ vaga: v, manual, pdfEnviado, onVerAdaptacao }: { vaga: Vaga; manual: boolean; pdfEnviado?: string; onVerAdaptacao: () => void }) {
   const st = STATUS_VAGA[v.status];
   const podeCandidatar = ['encontrada', 'erro', 'ensaio'].includes(v.status);
   return (
@@ -359,18 +422,41 @@ function VagaItem({ vaga: v, manual }: { vaga: Vaga; manual: boolean }) {
             {v.titulo}
             <ExternalLink size={12} aria-hidden />
           </a>
-          <span className={`rounded-[9px] px-2 py-0.5 text-[10px] font-bold ${st.classe}`}>{st.rotulo}</span>
+          <span className={`inline-flex items-center gap-1 rounded-[9px] px-2 py-0.5 text-[10px] font-bold ${st.classe}`}>
+            {v.status === 'enviada' && <CheckCircle2 size={12} aria-hidden />}
+            {st.rotulo}
+          </span>
         </p>
         <p className="text-[11px] text-ink-soft">
           {v.empresa} · {MODELO[v.modelo]} · {v.local || 'local não informado'} · {REGIME_VAGA[v.regime]}
+          {v.senioridade && v.senioridade !== 'Indefinida' && ` · ${v.senioridade}`}
         </p>
+        {v.motivo && <p className="mt-0.5 text-[11px] text-ink">{v.motivo}</p>}
         {v.skills.length > 0 && <p className="mt-0.5 text-[11px] text-ink-soft">Pede: {v.skills.join(', ')}</p>}
         {v.erro && <p className="mt-0.5 text-[11px] font-bold text-orange-deep">{v.erro}</p>}
-        {v.captura && (
-          <a href={urlArquivo(v.captura)} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-blue-dark hover:underline">
-            Ver captura de tela
-          </a>
+        {v.formulario && (
+          <p className="mt-0.5 text-[11px] text-ink-soft">
+            Formulário: {v.formulario.etapas} etapa(s), {v.formulario.campos} campos, {v.formulario.perguntas} pergunta(s) extra{v.formulario.typeform ? ', com Typeform' : ''}
+            {v.formulario.incomum && <span className="font-bold text-amber-ink"> · estrutura incomum, confira a captura</span>}
+          </p>
         )}
+        <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] font-bold">
+          <button type="button" onClick={onVerAdaptacao} className="inline-flex items-center gap-1 text-purple hover:underline">
+            <Sparkles size={12} aria-hidden />
+            Currículo adaptado
+          </button>
+          {pdfEnviado && (
+            <a href={urlArquivo(pdfEnviado)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-dark hover:underline">
+              <FileDown size={12} aria-hidden />
+              PDF usado na candidatura
+            </a>
+          )}
+          {v.captura && (
+            <a href={urlArquivo(v.captura)} target="_blank" rel="noreferrer" className="text-blue-dark hover:underline">
+              Ver captura de tela
+            </a>
+          )}
+        </p>
       </div>
       {manual && podeCandidatar && (
         <button type="button" className="btn btn-primary btn-sm" onClick={() => post('/candidatar', { id: v.id })}>
@@ -379,6 +465,108 @@ function VagaItem({ vaga: v, manual }: { vaga: Vaga; manual: boolean }) {
         </button>
       )}
     </li>
+  );
+}
+
+interface RespostaAdaptacao {
+  markdown: string;
+  diff: string[];
+  viaIA: boolean;
+  pdf?: string;
+  original: string;
+}
+
+// Modal "Currículo adaptado": gera (ou mostra a já gerada), compara com o original e abre o PDF
+function Adaptacao({ vaga, onFechar }: { vaga: Vaga; onFechar: () => void }) {
+  const [dados, setDados] = useState<RespostaAdaptacao | null>(null);
+  const [erro, setErro] = useState('');
+  const [ocupado, setOcupado] = useState(false);
+
+  async function gerar(refazer = false) {
+    setOcupado(true);
+    setErro('');
+    try {
+      setDados(await post<RespostaAdaptacao>('/preview/gerar', { id: vaga.id, refazer }));
+    } catch (e) {
+      setErro((e as Error).message);
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function abrirPdf() {
+    setOcupado(true);
+    try {
+      const { pdf } = await post<{ pdf: string }>('/preview/pdf', { id: vaga.id });
+      setDados(d => (d ? { ...d, pdf } : d));
+      window.open(urlArquivo(pdf), '_blank', 'noreferrer');
+    } catch (e) {
+      setErro((e as Error).message);
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  if (!dados && !ocupado && !erro) void gerar();
+
+  return (
+    <Modal
+      aberto
+      onFechar={onFechar}
+      icon={Sparkles}
+      titulo={`Currículo adaptado — ${vaga.titulo}`}
+      largo
+      rodape={
+        <>
+          <button type="button" className="btn btn-secondary" disabled={ocupado} onClick={() => gerar(true)}>
+            <RefreshCw size={16} aria-hidden />
+            Gerar de novo
+          </button>
+          <button type="button" className="btn btn-primary" disabled={ocupado || !dados} onClick={abrirPdf}>
+            <FileDown size={16} aria-hidden />
+            {dados?.pdf ? 'Abrir PDF' : 'Gerar e abrir PDF'}
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={onFechar}>
+            Fechar
+          </button>
+        </>
+      }
+    >
+      {erro && (
+        <p role="alert" className="text-xs font-bold text-orange-deep">
+          {erro}
+        </p>
+      )}
+      {!dados && !erro && <p className="py-6 text-center text-xs text-ink-soft">{ocupado ? 'Gerando a adaptação...' : ''}</p>}
+      {dados && (
+        <>
+          <div className="rounded-lg border border-panel-border bg-page-bg p-3">
+            <p className="label mb-1.5">O que mudou {dados.viaIA ? '(reescrito pela IA e validado)' : '(adaptação por regras)'}</p>
+            {dados.diff.length ? (
+              <ul className="list-disc pl-4 text-xs">
+                {dados.diff.map(d => (
+                  <li key={d}>{d}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-ink-soft">Nada a mudar: o original já está alinhado com esta vaga.</p>
+            )}
+            <p className="mt-1.5 text-[11px] text-ink-soft">Nenhuma competência, cargo ou dado foi acrescentado: a validação compara com o original antes de aceitar.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
+            {[
+              ['Original', dados.original],
+              ['Adaptado', dados.markdown],
+            ].map(([t, md]) => (
+              <div key={t}>
+                <p className="label">{t}</p>
+                <pre className="max-h-[360px] overflow-auto rounded-lg border border-panel-border p-2.5 font-mono text-[11px] whitespace-pre-wrap">{md}</pre>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }
 
@@ -418,6 +606,20 @@ function Pendencia({ vaga }: { vaga: Vaga }) {
                 {o}
               </label>
             ))}
+          </div>
+        ) : q.tipo === 'multipla' && q.opcoes?.length ? (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[11px] text-ink-soft">Marque todas que se aplicam.</p>
+            {q.opcoes.map(o => {
+              const marcadas = resposta ? resposta.split(' | ') : [];
+              const marcada = marcadas.includes(o);
+              return (
+                <label key={o} className={`flex items-center gap-2 px-3 py-2 text-xs ${cartao}`}>
+                  <input type="checkbox" checked={marcada} onChange={() => setResposta((marcada ? marcadas.filter(m => m !== o) : [...marcadas, o]).join(' | '))} className="size-4" />
+                  {o}
+                </label>
+              );
+            })}
           </div>
         ) : (
           <textarea value={resposta} onChange={e => setResposta(e.target.value)} rows={3} placeholder="Sua resposta" className="field" autoFocus />

@@ -4,6 +4,7 @@ import { ArrowRight, FileText, FolderOpen, Upload } from 'lucide-react';
 import { useEstadoBruto } from '../estado';
 import { enviarCurriculo } from '../api';
 import { formatarTamanho, validarCurriculo } from '../dados';
+import { TELEFONE_PATTERN, mascaraTelefone, mascarar } from '../mascaras';
 
 export default function Cadastro() {
   const { salvar } = useEstadoBruto();
@@ -70,7 +71,7 @@ export default function Cadastro() {
           </label>
           <label>
             <span className="label">Telefone</span>
-            <input name="telefone" type="tel" required autoComplete="tel" placeholder="(11) 90000-0000" className="field h-9" />
+            <input name="telefone" type="tel" required autoComplete="tel" inputMode="numeric" placeholder="(11) 90000-0000" pattern={TELEFONE_PATTERN} title="DDD e número, ex.: (11) 91234-5678" onInput={mascarar(mascaraTelefone)} className="field h-9" />
           </label>
           <label>
             <span className="label">Link do seu perfil no LinkedIn</span>

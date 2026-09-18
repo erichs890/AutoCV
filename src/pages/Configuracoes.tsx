@@ -2,16 +2,19 @@ import { useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } 
 import { useSearchParams } from 'react-router-dom';
 import {
   Accessibility, Bell, Briefcase, Calendar, Car, Check, CircleCheck, DollarSign, House, Info, Languages,
-  MessageSquare, Plus, ShieldCheck, Sparkles, Trash2, User, X, type LucideIcon,
+  MessageSquare, Plus, RadarIcon, ShieldCheck, Sparkles, Trash2, User, X, type LucideIcon,
 } from 'lucide-react';
 import { useEstado, type Perfil } from '../estado';
 import { NOTIFICACOES, iniciais } from '../dados';
+import { CPF_PATTERN, TELEFONE_PATTERN, mascaraCPF, mascaraMoeda, mascaraTelefone, mascarar } from '../mascaras';
 import ConfigIA from './ConfigIA';
+import ConfigDescoberta from './ConfigDescoberta';
 
 const abas = [
   { id: 'dados', label: 'Meus Dados', icon: User },
   { id: 'perguntas', label: 'Perguntas Automáticas', icon: MessageSquare },
   { id: 'ia', label: 'Inteligência Artificial', icon: Sparkles },
+  { id: 'descoberta', label: 'Descoberta de vagas', icon: RadarIcon },
   { id: 'notificacoes', label: 'Notificações', icon: Bell },
   { id: 'conta', label: 'Dados e Privacidade', icon: ShieldCheck },
 ];
@@ -93,6 +96,7 @@ export default function Configuracoes() {
         {atual === 'dados' && <AbaDados onSalvar={avisar} />}
         {atual === 'perguntas' && <AbaPerguntas onSalvar={avisar} />}
         {atual === 'ia' && <ConfigIA onSalvar={avisar} />}
+        {atual === 'descoberta' && <ConfigDescoberta onSalvar={avisar} />}
         {atual === 'notificacoes' && <AbaNotificacoes onSalvar={avisar} />}
         {atual === 'conta' && <AbaPrivacidade />}
       </div>
@@ -164,9 +168,9 @@ function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
         <div className="grid flex-1 grid-cols-2 content-start gap-3 max-md:grid-cols-1">
           <Campo label="Nome completo"><input name="nome" autoComplete="name" defaultValue={p.nome} required className="field" /></Campo>
           <Campo label="E-mail"><input name="email" type="email" autoComplete="email" defaultValue={p.email} required className="field" /></Campo>
-          <Campo label="Celular com DDD"><input name="telefone" type="tel" autoComplete="tel" defaultValue={p.telefone} required className="field" /></Campo>
+          <Campo label="Celular com DDD"><input name="telefone" type="tel" autoComplete="tel" inputMode="numeric" defaultValue={mascaraTelefone(p.telefone)} required pattern={TELEFONE_PATTERN} title="DDD e número, ex.: (11) 91234-5678" onInput={mascarar(mascaraTelefone)} className="field" /></Campo>
           <Campo label="LinkedIn (link do perfil)"><input name="linkedin" placeholder="https://linkedin.com/in/seu-perfil" defaultValue={p.linkedin ?? ''} className="field" /></Campo>
-          <Campo label="Pretensão salarial"><input name="pretensao" placeholder="R$ 4.500,00" defaultValue={p.pretensao ?? ''} className="field" /></Campo>
+          <Campo label="Pretensão salarial"><input name="pretensao" inputMode="numeric" placeholder="R$ 4.500" defaultValue={mascaraMoeda(p.pretensao ?? '')} onInput={mascarar(mascaraMoeda)} className="field" /></Campo>
           <Campo label="Se a vaga aceitar CLT e PJ">
             <select name="regimePreferido" defaultValue={estado.automacao.regimePreferido} className="field">
               <option value="CLT">Prefiro CLT</option>
@@ -175,7 +179,7 @@ function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
             </select>
           </Campo>
           <Campo label="Cargo desejado"><input name="cargo" defaultValue={p.cargo ?? ''} className="field" /></Campo>
-          <Campo label="Cidade / Estado"><input name="cidade" defaultValue={p.cidade ?? ''} className="field" /></Campo>
+          <Campo label="Cidade / Estado"><input name="cidade" placeholder="Ex.: Campinas - SP" autoComplete="address-level2" defaultValue={p.cidade ?? ''} className="field" /></Campo>
         </div>
       </div>
 
@@ -184,6 +188,7 @@ function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
         <div className="grid grid-cols-4 gap-3 max-lg:grid-cols-2 max-md:grid-cols-1">
           <Campo label="GitHub"><input name="github" defaultValue={p.github ?? ''} className="field" /></Campo>
           <Campo label="Portfólio"><input name="portfolio" autoComplete="url" defaultValue={p.portfolio ?? ''} className="field" /></Campo>
+          <Campo label="CPF"><input name="cpf" inputMode="numeric" placeholder="000.000.000-00" defaultValue={mascaraCPF(p.cpf ?? '')} pattern={CPF_PATTERN} title="CPF com 11 dígitos" onInput={mascarar(mascaraCPF)} className="field" /></Campo>
           <Campo label="Data de nascimento"><input name="nascimento" type="date" autoComplete="bday" defaultValue={p.nascimento ?? ''} className="field" /></Campo>
           <Campo label="Disponibilidade">
             <select name="disponibilidade" defaultValue={p.disponibilidade ?? ''} className="field">
@@ -305,7 +310,7 @@ function AbaPrivacidade() {
 
   const itens = [
     ['Currículos', estado.curriculos.length],
-    ['Empresas do InHire', estado.automacao.tenants.length],
+    ['Empresas do InHire', estado.empresas.length],
     ['Vagas encontradas', estado.vagas.length],
     ['Candidaturas', estado.candidaturas.length],
   ] as const;

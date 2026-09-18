@@ -1,7 +1,8 @@
 import type { Arquivo, ConfigAutomacao, Conexao, Envio, Estado, EstadoRobo, Perfil, Pergunta, Vaga } from '../src/types.ts';
-import { candidaturas, kv, log, vagas } from './storage/db.ts';
+import { candidaturas, empresas, kv, log, vagas } from './storage/db.ts';
 import { emitir } from './events.ts';
 import { iaParaFront } from './ia.ts';
+import { descobertaParaFront } from './platforms/inhire/discovery.ts';
 
 export const AUTOMACAO_PADRAO: ConfigAutomacao = {
   configurada: false,
@@ -9,6 +10,7 @@ export const AUTOMACAO_PADRAO: ConfigAutomacao = {
   curriculo: null,
   area: '',
   cargo: '',
+  senioridade: '',
   local: '',
   salarioMin: 1500,
   salarioMax: 6000,
@@ -23,7 +25,6 @@ export const AUTOMACAO_PADRAO: ConfigAutomacao = {
   ensaio: true,
   mostrarNavegador: false,
   scoreMinimo: 30,
-  tenants: [],
 };
 
 const PERGUNTAS_PADRAO: Pergunta[] = [
@@ -80,6 +81,8 @@ export function montarEstado(): Estado {
     conexoes: ler.conexoes(),
     automacao: ler.automacao(),
     ia: iaParaFront(),
+    empresas: empresas.listar(),
+    descoberta: descobertaParaFront(),
     robo: ler.robo(),
     envios,
     candidaturas: lista,

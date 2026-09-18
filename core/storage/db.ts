@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { DB_PATH } from '../config.ts';
 import { emitir } from '../events.ts';
-import type { Candidatura, LinhaLog, Vaga } from '../../src/types.ts';
+import type { Candidatura, EmpresaInHire, LinhaLog, Vaga } from '../../src/types.ts';
 
 export const db = new DatabaseSync(DB_PATH);
 db.exec(`
@@ -12,7 +12,24 @@ db.exec(`
   );
   create table if not exists candidaturas (id integer primary key autoincrement, enviada_em text not null, dados text not null);
   create table if not exists log (id integer primary key autoincrement, hora text not null, tipo text not null, msg text not null);
+  create table if not exists empresas_inhire (
+    subdominio text primary key, nome text not null default '', ativo integer not null default 1,
+    origem text not null default 'manual', ultima_verificacao text, total_vagas integer not null default 0,
+    falhas integer not null default 0, criada_em text not null
+  );
+  create table if not exists formularios (vaga_id text primary key, estrutura text not null, atualizada_em text not null);
 `);
+
+// Estrutura de formulário descoberta por vaga (cache/diagnóstico; a descoberta em tempo real continua mandando)
+export const formularios = {
+  salvar(vagaId: string, estrutura: unknown) {
+    db.prepare('insert into formularios (vaga_id, estrutura, atualizada_em) values (?, ?, ?) on conflict(vaga_id) do update set estrutura = excluded.estrutura, atualizada_em = excluded.atualizada_em').run(vagaId, JSON.stringify(estrutura), new Date().toISOString());
+  },
+  get<T>(vagaId: string): T | undefined {
+    const l = db.prepare('select estrutura from formularios where vaga_id = ?').get(vagaId) as { estrutura: string } | undefined;
+    return l ? (JSON.parse(l.estrutura) as T) : undefined;
+  },
+};
 
 // Blobs JSON por chave: perfil, curriculos, conexoes, automacao, robo, perguntas, notificacoes...
 export const kv = {
@@ -86,6 +103,41 @@ export const log = {
   },
 };
 
+type LinhaEmpresa = { subdominio: string; nome: string; ativo: number; origem: EmpresaInHire['origem']; ultima_verificacao: string | null; total_vagas: number; falhas: number; criada_em: string };
+const paraEmpresa = (l: LinhaEmpresa): EmpresaInHire => ({
+  subdominio: l.subdominio,
+  nome: l.nome,
+  urlVagas: `https://${l.subdominio}.inhire.app/vagas`,
+  ativo: l.ativo === 1,
+  origem: l.origem,
+  ultimaVerificacao: l.ultima_verificacao,
+  totalVagas: l.total_vagas,
+  falhas: l.falhas,
+  criadaEm: l.criada_em,
+});
+
+export const empresas = {
+  listar(): EmpresaInHire[] {
+    return (db.prepare('select * from empresas_inhire order by ativo desc, total_vagas desc, nome').all() as unknown as LinhaEmpresa[]).map(paraEmpresa);
+  },
+  get(subdominio: string): EmpresaInHire | undefined {
+    const l = db.prepare('select * from empresas_inhire where subdominio = ?').get(subdominio) as unknown as LinhaEmpresa | undefined;
+    return l ? paraEmpresa(l) : undefined;
+  },
+  inserir(subdominio: string, nome: string, origem: EmpresaInHire['origem']) {
+    db.prepare('insert or ignore into empresas_inhire (subdominio, nome, origem, criada_em) values (?, ?, ?, ?)').run(subdominio, nome, origem, new Date().toISOString());
+  },
+  atualizar(subdominio: string, p: Partial<Pick<EmpresaInHire, 'nome' | 'ativo' | 'ultimaVerificacao' | 'totalVagas' | 'falhas'>>) {
+    const atual = empresas.get(subdominio);
+    if (!atual) return;
+    const n = { ...atual, ...p };
+    db.prepare('update empresas_inhire set nome = ?, ativo = ?, ultima_verificacao = ?, total_vagas = ?, falhas = ? where subdominio = ?').run(n.nome, n.ativo ? 1 : 0, n.ultimaVerificacao, n.totalVagas, n.falhas, subdominio);
+  },
+  remover(subdominio: string) {
+    db.prepare('delete from empresas_inhire where subdominio = ?').run(subdominio);
+  },
+};
+
 export function apagarTudo() {
-  db.exec('delete from kv; delete from vagas; delete from candidaturas; delete from log;');
+  db.exec('delete from kv; delete from vagas; delete from candidaturas; delete from log; delete from empresas_inhire; delete from formularios;');
 }
