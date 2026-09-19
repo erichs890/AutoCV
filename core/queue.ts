@@ -9,6 +9,7 @@ import { descobrirEmpresas, lerDescoberta } from './platforms/inhire/discovery.t
 import { empresas } from './storage/db.ts';
 import { calcularScore } from './resume/score.ts';
 import { inferirSenioridade } from './resume/analyzer.ts';
+import { esperaDaTentativa, falhaRepetivel, MAX_TENTATIVAS } from './falhas.ts';
 
 const registrar = log.registrar;
 let ocupado = false; // uma candidatura por vez, sempre
@@ -103,7 +104,7 @@ export async function buscarEmpresas(): Promise<number> {
 export function candidatarAgora(id: string) {
   const v = vagas.get(id);
   if (!v) throw new Error('vaga não encontrada');
-  vagas.atualizar(id, { status: 'na_fila', posicao: vagas.proximaPosicao(), pendencia: undefined, erro: undefined });
+  vagas.atualizar(id, { status: 'na_fila', posicao: vagas.proximaPosicao(), pendencia: undefined, erro: undefined, tentativas: undefined, proximaTentativaEm: undefined });
   registrar('info', `"${v.titulo}" entrou na fila.`);
   emitir({ tipo: 'estado' });
   void processarProxima(true);
@@ -122,20 +123,20 @@ export function responder(id: string, resposta: string, salvar: boolean) {
   const perfil = ler.perfil();
   if (rotulo === PERGUNTA_LINKEDIN && perfil) {
     kv.set('perfil', { ...perfil, linkedin: resposta });
-    vagas.atualizar(id, { status: 'na_fila', pendencia: undefined });
+    vagas.atualizar(id, { status: 'na_fila', pendencia: undefined, proximaTentativaEm: undefined });
   } else if (rotulo === PERGUNTA_PRETENSAO && perfil) {
     kv.set('perfil', { ...perfil, pretensao: resposta });
-    vagas.atualizar(id, { status: 'na_fila', pendencia: undefined });
+    vagas.atualizar(id, { status: 'na_fila', pendencia: undefined, proximaTentativaEm: undefined });
   } else if (rotulo === PERGUNTA_CIDADE && perfil) {
     kv.set('perfil', { ...perfil, cidade: resposta });
-    vagas.atualizar(id, { status: 'na_fila', pendencia: undefined });
+    vagas.atualizar(id, { status: 'na_fila', pendencia: undefined, proximaTentativaEm: undefined });
   } else if (rotulo === PERGUNTA_CPF && perfil) {
     kv.set('perfil', { ...perfil, cpf: resposta.replace(/\D/g, '') });
-    vagas.atualizar(id, { status: 'na_fila', pendencia: undefined });
+    vagas.atualizar(id, { status: 'na_fila', pendencia: undefined, proximaTentativaEm: undefined });
   } else if (rotulo.startsWith(PERGUNTA_REGIME)) {
     // Regime escolhido para esta vaga; se for para guardar, vira a preferência padrão
     if (salvar) kv.set('automacao', { ...ler.automacao(), regimePreferido: resposta as 'CLT' | 'PJ' });
-    vagas.atualizar(id, { status: 'na_fila', pendencia: undefined, regime: resposta as 'CLT' | 'PJ' });
+    vagas.atualizar(id, { status: 'na_fila', pendencia: undefined, proximaTentativaEm: undefined, regime: resposta as 'CLT' | 'PJ' });
   } else {
     const perguntas = ler.perguntas();
     const existente = perguntas.find(p => p.pergunta === rotulo);
@@ -143,7 +144,7 @@ export function responder(id: string, resposta: string, salvar: boolean) {
     else perguntas.push({ id: Date.now(), icone: '', pergunta: rotulo, resposta, personalizada: true });
     // Se não for para guardar, a resposta vale só para esta tentativa: removemos depois de usar
     kv.set('perguntas', perguntas);
-    vagas.atualizar(id, { status: 'na_fila', pendencia: undefined, respostaTemporaria: salvar ? undefined : rotulo });
+    vagas.atualizar(id, { status: 'na_fila', pendencia: undefined, proximaTentativaEm: undefined, respostaTemporaria: salvar ? undefined : rotulo });
   }
   registrar('info', `Resposta registrada para "${rotulo}".`);
   emitir({ tipo: 'estado' });
@@ -158,25 +159,44 @@ export function decidirPreview(id: string, decisao: 'adaptado' | 'original' | 'c
     vagas.atualizar(id, { status: 'encontrada', pendencia: undefined, posicao: undefined });
     registrar('alerta', `Candidatura a "${v.titulo}" cancelada por você.`);
   } else {
-    vagas.atualizar(id, { status: 'na_fila', decisaoPreview: decisao, pendencia: decisao === 'adaptado' ? v.pendencia : undefined });
+    vagas.atualizar(id, { status: 'na_fila', decisaoPreview: decisao, proximaTentativaEm: undefined, pendencia: decisao === 'adaptado' ? v.pendencia : undefined });
     registrar('info', `Você escolheu enviar o currículo ${decisao} para "${v.titulo}".`);
   }
   emitir({ tipo: 'estado' });
   void processarProxima(true);
 }
 
-async function processarProxima(forcar = false) {
-  if (ocupado) return;
-  const cfg = ler.automacao();
-  const proxima = vagas.proximaNaFila();
-  if (!proxima) return;
-  if (!forcar) {
-    if (ler.robo() !== 'ativo' || cfg.modo !== 'automatico') return;
-    if (!dentroDaJanela(cfg.janela)) return;
-    if (enviosHoje() >= cfg.limiteDiario) return;
-    const prox = ler.proximoEnvioEm();
-    if (prox && new Date(prox) > new Date()) return;
+/** Decide entre desistir (fica em `erro`) ou devolver à fila com espera crescente. */
+function tratarFalha(vaga: Vaga, motivo: string) {
+  const tentativas = (vaga.tentativas ?? 0) + 1;
+  const repetivel = falhaRepetivel(motivo);
+  if (!repetivel || tentativas > MAX_TENTATIVAS) {
+    vagas.atualizar(vaga.id, { status: 'erro', erro: motivo, tentativas, proximaTentativaEm: undefined });
+    if (repetivel) registrar('erro', `"${vaga.titulo}" falhou ${MAX_TENTATIVAS}x seguidas (${motivo}); desisti desta vaga.`);
+    return;
   }
+  const minutos = esperaDaTentativa(tentativas);
+  vagas.atualizar(vaga.id, { status: 'na_fila', erro: motivo, tentativas, proximaTentativaEm: new Date(Date.now() + minutos * 60000).toISOString() });
+  registrar('alerta', `"${vaga.titulo}": ${motivo}. Tentativa ${tentativas} de ${MAX_TENTATIVAS}; volto a tentar em ${minutos} min.`);
+}
+
+/** Por que a fila não anda agora — mensagem única, para o usuário não ficar no escuro. */
+function motivoDeEspera(cfg: ReturnType<typeof ler.automacao>): string | null {
+  if (ler.robo() !== 'ativo') return 'o robô está pausado';
+  if (cfg.modo !== 'automatico') return 'o modo é manual (use "Quero me candidatar" em cada vaga)';
+  if (!dentroDaJanela(cfg.janela)) return `estamos fora da janela de envio (${cfg.janela})`;
+  if (enviosHoje() >= cfg.limiteDiario) return `o limite diário de ${cfg.limiteDiario} envio(s) foi atingido`;
+  const prox = ler.proximoEnvioEm();
+  if (prox && new Date(prox) > new Date()) return `o próximo envio está agendado para ${new Date(prox).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} (intervalo de ${cfg.intervalo} min)`;
+  return null;
+}
+
+let ultimaEspera = '';
+let rodando = false; // trabalhador da fila ativo (cobre o intervalo entre duas candidaturas)
+let pedidoForcado = false; // chegou um pedido manual enquanto o robô estava ocupado: roda assim que liberar
+
+/** Processa UMA candidatura. Retorna true se pode continuar imediatamente para a próxima. */
+async function processarUma(proxima: Vaga): Promise<boolean> {
   ocupado = true;
   try {
     await executarCandidatura(proxima.id);
@@ -185,12 +205,66 @@ async function processarProxima(forcar = false) {
       kv.set('perguntas', ler.perguntas().filter(p => p.pergunta !== depois.respostaTemporaria));
       vagas.atualizar(proxima.id, { respostaTemporaria: undefined });
     }
+    if (depois?.status === 'erro' && depois.erro) tratarFalha(depois, depois.erro);
+    // Enviada ou em ensaio: a contagem de tentativas desta vaga não interessa mais
+    if (depois?.status === 'enviada' || depois?.status === 'ensaio') vagas.atualizar(proxima.id, { tentativas: undefined, proximaTentativaEm: undefined, erro: undefined });
+    // Pendência (pergunta/aprovação) não bloqueia a fila: seguimos para a próxima vaga na mesma rodada
+    return true;
   } catch (e) {
-    vagas.atualizar(proxima.id, { status: 'erro', erro: (e as Error).message });
-    registrar('erro', `Erro inesperado em "${proxima.titulo}": ${(e as Error).message}`);
+    tratarFalha(proxima, (e as Error).message);
+    return true;
   } finally {
     ocupado = false;
     emitir({ tipo: 'estado' });
+  }
+}
+
+/**
+ * Trabalhador da fila: processa uma candidatura atrás da outra até acabar a fila ou um portão fechar
+ * (intervalo entre envios, limite diário, janela, robô pausado). Uma de cada vez, sempre.
+ *
+ * `forcar` = pedido manual do usuário: roda a próxima da fila ignorando os portões de agendamento.
+ */
+async function processarProxima(forcar = false) {
+  // `ocupado` é a candidatura em si; `rodando` é o trabalhador — sem ele, o laço de 20 s entraria entre duas
+  // candidaturas do mesmo trabalhador (quando `ocupado` já voltou a false) e abriria uma segunda fila em paralelo.
+  if (rodando || ocupado) {
+    // Não perde o pedido: quem está rodando agora reavalia a fila ao terminar
+    if (forcar) pedidoForcado = true;
+    return;
+  }
+  rodando = true;
+  try {
+    await girarFila(forcar);
+  } finally {
+    rodando = false;
+  }
+  // Um pedido manual que chegou durante a rodada: atende agora, sem esperar os 20 s
+  if (pedidoForcado) await processarProxima(true);
+}
+
+async function girarFila(forcar: boolean) {
+  for (let rodada = 0; rodada < 50; rodada++) {
+    const cfg = ler.automacao();
+    const forcarAgora = forcar || pedidoForcado;
+    pedidoForcado = false;
+    if (!forcarAgora) {
+      const espera = motivoDeEspera(cfg);
+      if (espera) {
+        // Só avisa quando há fila de verdade e o motivo mudou (senão vira ruído a cada 20 s)
+        if (vagas.proximaNaFila() && espera !== ultimaEspera) {
+          registrar('info', `Fila parada: ${espera}.`);
+          ultimaEspera = espera;
+        }
+        return;
+      }
+      ultimaEspera = '';
+    }
+    const proxima = vagas.proximaNaFila();
+    if (!proxima) return;
+    if (cfg.ensaio) registrar('alerta', `Modo ensaio LIGADO: "${proxima.titulo}" será preenchida mas NÃO enviada. Desligue o ensaio em Automação para candidatar de verdade.`);
+    if (!(await processarUma(proxima))) return;
+    forcar = false; // um pedido manual libera uma candidatura; as seguintes respeitam os portões
   }
 }
 
@@ -228,8 +302,14 @@ export function iniciarLaco() {
 
 export function ligarRobo(ligar: boolean) {
   kv.set('robo', ligar ? 'ativo' : 'pausado');
-  registrar(ligar ? 'sucesso' : 'alerta', ligar ? `Robô ligado em modo ${ler.automacao().modo === 'automatico' ? 'automático' : 'manual'}.` : 'Robô pausado.');
+  const cfg = ler.automacao();
+  registrar(ligar ? 'sucesso' : 'alerta', ligar ? `Robô ligado em modo ${cfg.modo === 'automatico' ? 'automático' : 'manual'}.` : 'Robô pausado.');
+  // Avisos que explicam "liguei o robô e nada acontece" antes de o usuário ficar esperando
+  if (ligar && cfg.ensaio) registrar('alerta', 'Atenção: o modo ensaio está LIGADO. O robô preenche o formulário inteiro mas NÃO envia nada. Desligue o ensaio em Automação para candidatar de verdade.');
+  if (ligar && cfg.modo !== 'automatico') registrar('info', 'Modo manual: a fila só anda quando você clica em "Quero me candidatar". Mude para automático em Automação para o robô andar sozinho.');
   emitir({ tipo: 'estado' });
+  ultimaEspera = '';
+  if (ligar) void processarProxima(); // não espera os 20 s do laço
 }
 
 export const statusFila = (): Vaga[] => vagas.listar();

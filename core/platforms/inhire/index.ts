@@ -8,6 +8,7 @@ import { ler } from '../../estado.ts';
 import { formularios } from '../../storage/db.ts';
 import { lerSchemaFormulario, perguntasCertas } from './schema.ts';
 import { executarFormulario, type EtapaDescoberta } from './formulario.ts';
+import { ROTAS_ENVIO } from './selectors.ts';
 
 export { pretensaoEmReais } from './formulario.ts';
 
@@ -35,6 +36,32 @@ async function candidatar(vaga: Vaga, dados: DadosCandidatura, log: Log): Promis
   };
   let etapas: EtapaDescoberta[] = [];
   page.setDefaultTimeout(12000); // ações do Playwright (click/fill) esperam no máximo isto; as esperas de fluxo são explícitas
+
+  // Prova dura de envio: a resposta HTTP das rotas que criam a candidatura. Texto de tela muda; isto não.
+  // Sem isto, uma mudança de redação na tela de agradecimento faz o robô marcar erro numa vaga que já foi enviada
+  // (e, pior, tentar de novo). Também registra recusas (4xx/5xx) com o motivo real que o InHire devolveu.
+  let envioAceito = false;
+  let recusaDoServidor = '';
+  page.on('response', res => {
+    const rota = ROTAS_ENVIO.find(r => r.re.test(res.url()));
+    if (!rota || !/^(POST|PUT|PATCH)$/i.test(res.request().method())) return;
+    if (res.status() >= 200 && res.status() < 300) {
+      if (rota.definitiva && !envioAceito) {
+        envioAceito = true;
+        log('sucesso', `O InHire aceitou a candidatura (${res.status()} em ${new URL(res.url()).pathname}).`);
+      }
+    } else if (rota.definitiva) {
+      recusaDoServidor = `o InHire recusou o envio (HTTP ${res.status()})`;
+      res
+        .text()
+        .then(t => {
+          const m = t.replace(/\s+/g, ' ').slice(0, 160);
+          if (m) recusaDoServidor = `o InHire recusou o envio (HTTP ${res.status()}): ${m}`;
+        })
+        .catch(() => {});
+    }
+  });
+
   try {
     if (dados.ensaio) for (const rota of ROTAS_DE_ENVIO) await page.route(rota, r => r.abort());
     log('info', `Abrindo ${vaga.url}`);
@@ -48,7 +75,7 @@ async function candidatar(vaga: Vaga, dados: DadosCandidatura, log: Log): Promis
     if (!apareceu) return { status: 'erro', motivo: 'formulário de candidatura não apareceu (vaga encerrada ou layout mudou)', captura: await captura('sem-formulario') };
 
     const schema = await lerSchemaFormulario(vaga.tenant, jobIdDe(vaga)).catch(() => null);
-    const r = await executarFormulario(page, dados, log, { fluxoCondicional: schema?.fluxoCondicional ?? false });
+    const r = await executarFormulario(page, dados, log, { fluxoCondicional: schema?.fluxoCondicional ?? false, envioComprovado: () => envioAceito });
     etapas = r.etapas;
     const resumo: ResumoFormulario = {
       etapas: r.etapas.length,
@@ -65,11 +92,16 @@ async function candidatar(vaga: Vaga, dados: DadosCandidatura, log: Log): Promis
       log('info', `Valores no formulário: ${JSON.stringify(valores).slice(0, 400)}`);
       return { ...r.resultado, captura: await captura('ensaio'), formulario: resumo };
     }
-    if (r.resultado.status === 'erro') return { ...r.resultado, captura: await captura('erro'), formulario: resumo };
+    if (r.resultado.status === 'erro') return { ...r.resultado, motivo: recusaDoServidor || r.resultado.motivo, captura: await captura('erro'), formulario: resumo };
     if (r.resultado.status === 'pergunta') return r.resultado;
     return { ...r.resultado, formulario: resumo };
   } catch (e) {
-    const motivo = (e as Error).message.split('\n')[0];
+    // Exceção depois de um envio já aceito (a página fechou, o layout sumiu): a candidatura existe. Não é erro.
+    if (envioAceito) {
+      log('alerta', `A página quebrou depois do envio (${(e as Error).message.split('\n')[0]}), mas o InHire já tinha aceitado a candidatura.`);
+      return { status: 'enviada' };
+    }
+    const motivo = recusaDoServidor || (e as Error).message.split('\n')[0];
     const ultima = etapas.at(-1);
     return { status: 'erro', motivo: ultima ? `${motivo} (etapa ${ultima.etapa}: ${ultima.campos.map(c => c.rotulo || c.nome).slice(0, 6).join(', ')})` : motivo, captura: await captura('erro') };
   } finally {

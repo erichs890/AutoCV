@@ -45,8 +45,20 @@ export const ROTULO_FIXO: [RegExp, PapelFixo][] = [
 export const BOTAO_PROXIMO = /^(avan[çc]ar|pr[óo]xim[oa]|seguinte|continuar)$/i;
 export const BOTAO_FINAL = /continuar inscri|enviar|finalizar|concluir|submit/i;
 
-// Sinais de que o InHire aceitou a candidatura
-export const SUCESSO = /candidatura (enviada|realizada|recebida|conclu)|inscri[çc][ãa]o (enviada|realizada|recebida|conclu)|recebemos (sua|a sua) (candidatura|inscri)|obrigad[oa] por se candidatar|boa sorte/i;
+// Sinais de que o InHire aceitou a candidatura (texto da página).
+// A prova dura é a resposta HTTP das rotas de envio (ROTAS_ENVIO); este texto é o reforço, não a única evidência —
+// quando o InHire troca a redação da tela de agradecimento o robô não pode concluir "falhou" e reenviar.
+export const SUCESSO =
+  /candidatura (enviada|realizada|recebida|conclu|registrada|cadastrada)|inscri[çc][ãa]o (enviada|realizada|recebida|conclu|registrada|finalizada|confirmada)|recebemos (sua|a sua|seu|o seu) (candidatura|inscri|curr[ií]culo|cadastro)|obrigad[oa] por (se candidatar|se inscrever|participar|sua inscri|seu interesse)|boa sorte|em breve (entraremos|nossa equipe|o time)|voc[êe] (j[áa] )?(est[áa] )?(inscrit[oa]|candidatad[oa])|sua candidatura (foi|est[áa])|deu tudo certo/i;
+
+// Rotas que o InHire chama para CRIAR a candidatura. Uma resposta 2xx aqui é prova de que o envio aconteceu —
+// vale mais do que qualquer texto na tela. `talents` cria o talento (fluxo normal); `form/submit` e `responses`
+// gravam as respostas do questionário (fluxo condicional, em que o talento nasce só no fim).
+export const ROTAS_ENVIO: { re: RegExp; definitiva: boolean }[] = [
+  { re: /\/job-talents\/public\/[^/]+\/talents\b/i, definitiva: true },
+  { re: /\/forms\/form\/submit\b/i, definitiva: true },
+  { re: /\/responses\b/i, definitiva: false }, // Typeform grava resposta a resposta: só confirma o questionário
+];
 
 // Botão que abre o seletor de arquivo do currículo
 export const BOTAO_ANEXAR = /anexar|upload|escolher arquivo|selecionar arquivo/i;

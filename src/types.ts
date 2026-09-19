@@ -193,6 +193,8 @@ export interface Vaga {
   formulario?: ResumoFormulario;
   decisaoPreview?: 'adaptado' | 'original';
   respostaTemporaria?: string; // rótulo da pergunta cuja resposta não deve ser guardada
+  tentativas?: number; // falhas transitórias seguidas (rede, timeout): a vaga volta para a fila com espera crescente
+  proximaTentativaEm?: string; // ISO: antes disso a fila não pega esta vaga de novo
   encontradaEm: string;
   atualizadaEm: string;
 }

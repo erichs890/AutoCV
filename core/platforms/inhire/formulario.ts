@@ -841,6 +841,12 @@ const MAX_ETAPAS = 8;
 export interface OpcoesFormulario {
   /** Empresa com requireCustomFormCompletion: o botão final abre o questionário sem criar o talento (ensaio pode clicar) */
   fluxoCondicional?: boolean;
+  /**
+   * Prova dura de envio: true depois que uma rota de criação da candidatura respondeu 2xx (index.ts escuta a rede).
+   * Enquanto o texto da tela é redação do InHire (pode mudar sem aviso), isto é o fato. Duas consequências:
+   * nunca reportamos erro depois de um envio comprovado, e nunca clicamos no botão final de novo.
+   */
+  envioComprovado?: () => boolean;
 }
 
 export async function executarFormulario(page: Page, dados: DadosCandidatura, log: Log, opcoes: OpcoesFormulario = {}): Promise<Resultado> {
@@ -848,11 +854,23 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
   let perguntasRespondidas = 0;
   let typeform = false;
   let talentoCriado = false; // já clicamos no botão final do InHire (POST do talento) nesta candidatura
-  const saidaErro = (motivo: string): Resultado => ({ resultado: { status: 'erro', motivo }, etapas, perguntasRespondidas, typeform });
+  const comprovado = () => opcoes.envioComprovado?.() === true;
+  const enviada = (): Resultado => ({ resultado: { status: 'enviada' }, etapas, perguntasRespondidas, typeform });
+  // Depois de um envio comprovado pela rede, nenhum desvio de layout pode virar "erro": a candidatura existe lá.
+  const saidaErro = (motivo: string): Resultado => {
+    if (comprovado()) {
+      log('alerta', `A tela não confirmou (${motivo}), mas a candidatura foi aceita pelo InHire (resposta da API de envio). Contando como enviada.`);
+      return enviada();
+    }
+    return { resultado: { status: 'erro', motivo }, etapas, perguntasRespondidas, typeform };
+  };
+  const sucessoNaTela = async () => SUCESSO.test(await page.evaluate(() => document.body.innerText).catch(() => ''));
 
   for (let etapa = 1; etapa <= MAX_ETAPAS; etapa++) {
     // Confirmação pode aparecer a qualquer momento (depois do questionário no fluxo condicional, por exemplo)
-    if (SUCESSO.test(await page.evaluate(() => document.body.innerText).catch(() => ''))) return { resultado: { status: 'enviada' }, etapas, perguntasRespondidas, typeform };
+    // A prova de rede sozinha NÃO encerra o laço: no fluxo normal o talento é criado antes do questionário, e as
+    // perguntas da empresa ainda precisam ser respondidas. Ela vale para não reportar erro e para não reenviar.
+    if (await sucessoNaTela()) return enviada();
 
     // ETAPA 3: a cada etapa, decide o modo — abas (campos simultâneos) ou sequencial (uma pergunta por tela)
     const modo = await detectarModo(page);
@@ -867,13 +885,15 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
       // concluído: devolve o controle ao laço principal — espera a confirmação ou a próxima etapa do InHire
       log('info', 'Questionário concluído; de volta ao formulário principal.');
       const desfecho = await ate(async () => {
-        if (SUCESSO.test(await page.evaluate(() => document.body.innerText).catch(() => ''))) return true;
+        if (await sucessoNaTela()) return true;
+        if (comprovado()) return true; // questionário terminado + envio aceito pela API = acabou
         if ((await detectarModo(page)).modo === 'sequencial') return false;
         return (await descobrirCampos(page)).length > 0 || (await acharBotao(page)) !== null;
       }, 25000, 500);
+      if (desfecho && (comprovado() || (await sucessoNaTela()))) return enviada();
       if (!desfecho && talentoCriado) {
         log('alerta', 'O InHire não mostrou a mensagem de confirmação, mas a candidatura já tinha sido criada antes do questionário.');
-        return { resultado: { status: 'enviada' }, etapas, perguntasRespondidas, typeform };
+        return enviada();
       }
       if (!desfecho) return saidaErro('sem confirmação do InHire depois do questionário');
       continue;
@@ -918,11 +938,20 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
     const botao = await acharBotao(page);
     if (!botao) return saidaErro('não achei o botão para avançar ou enviar nesta etapa');
     if (!(await ate(() => habilitado(botao.loc), 10000))) {
+      // Diagnóstico útil: qual campo obrigatório ficou vazio (o InHire raramente diz)
+      const faltando = (await descobrirCampos(page).catch(() => [])).filter(c => c.obrigatorio && !c.preenchido).map(c => c.rotulo || c.nome).filter(Boolean);
       const erros = await errosVisiveis(page);
-      return saidaErro(`o InHire não liberou "${botao.texto}": ${erros.length ? erros.join(' · ') : 'algum campo obrigatório ficou inválido ou vazio'}`);
+      const detalhe = faltando.length ? `falta preencher: ${faltando.slice(0, 6).join(', ')}` : erros.length ? erros.join(' · ') : 'algum campo obrigatório ficou inválido ou vazio';
+      return saidaErro(`o InHire não liberou "${botao.texto}": ${detalhe}`);
     }
 
     if (botao.final) {
+      // Trava anti-duplicidade: se a candidatura já foi aceita pela API, nunca clicamos no botão final de novo
+      if (comprovado()) {
+        log('alerta', `"${botao.texto}" reapareceu depois de um envio já aceito pelo InHire; não vou clicar de novo.`);
+        return enviada();
+      }
+      if (talentoCriado) return saidaErro(`o InHire voltou a mostrar "${botao.texto}" depois do envio; parei para não candidatar duas vezes`);
       // Em ensaio, o botão final só é clicado quando ele apenas abre o questionário (fluxo condicional); o POST de
       // criação do talento está abortado pelo navegador de qualquer forma (index.ts)
       if (dados.ensaio && !opcoes.fluxoCondicional) return { resultado: { status: 'ensaio', captura: '', pronto: true }, etapas, perguntasRespondidas, typeform };
@@ -933,18 +962,23 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
       // Depois do envio: confirmação, questionário sequencial (iframe/nativo) ou mais campos do InHire
       let desfecho: 'sucesso' | 'sequencial' | 'campos' | null = null;
       await ate(async () => {
-        if (SUCESSO.test(await page.evaluate(() => document.body.innerText))) desfecho = 'sucesso';
+        if (await sucessoNaTela()) desfecho = 'sucesso';
         else if ((await detectarModo(page)).modo === 'sequencial') desfecho = 'sequencial';
         else {
-          const agora = await descobrirCampos(page);
+          const agora = await descobrirCampos(page).catch(() => []);
           if (agora.length && assinatura(agora) !== antes) desfecho = 'campos';
         }
         return desfecho !== null;
       }, 25000, 500);
-      if (desfecho === 'sucesso') return { resultado: { status: 'enviada' }, etapas, perguntasRespondidas, typeform };
+      if (desfecho === 'sucesso') return enviada();
       if (desfecho === 'sequencial' || desfecho === 'campos') continue; // o topo do laço detecta o modo e segue
+      // Nada mudou na tela. Se a API aceitou o envio, acabou bem — o InHire só não trocou a mensagem.
+      if (comprovado()) {
+        log('alerta', 'O InHire aceitou a candidatura pela API, mas não trocou a mensagem da tela. Contando como enviada.');
+        return enviada();
+      }
       const texto = await page.evaluate(() => document.body.innerText).catch(() => '');
-      if (/captcha|robô|robot/i.test(texto)) return saidaErro('o InHire pediu verificação (captcha); envie esta vaga manualmente');
+      if (/captcha|rob[ôo]|robot|verifica[çc][ãa]o de seguran/i.test(texto)) return saidaErro('o InHire pediu verificação (captcha); envie esta vaga manualmente');
       return saidaErro('sem confirmação do InHire após o envio');
     }
 

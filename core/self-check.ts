@@ -249,6 +249,34 @@ assert.ok(seed.empresas.length >= 10 && seed.empresas.every(e => /^[a-z0-9-]+$/.
 assert.equal(new Set(seed.empresas.map(e => e.subdominio)).size, seed.empresas.length, 'seed com subdomínio repetido');
 console.log(`✓ Descoberta: subdomínios, URLs e seed (${seed.empresas.length} empresas)`);
 
+// 5c) Envio: prova de rede, texto de confirmação e política de nova tentativa
+const { SUCESSO, ROTAS_ENVIO } = await import('./platforms/inhire/selectors.ts');
+for (const t of [
+  'Candidatura enviada com sucesso!',
+  'Inscrição realizada com sucesso',
+  'Recebemos o seu currículo',
+  'Obrigada por se candidatar',
+  'Sua candidatura foi registrada',
+  'Em breve entraremos em contato',
+])
+  assert.ok(SUCESSO.test(t), `confirmação não reconhecida: "${t}"`);
+for (const t of ['Preencha os campos obrigatórios', 'Continuar inscrição', 'Ocorreu um erro'])
+  assert.ok(!SUCESSO.test(t), `texto comum lido como confirmação: "${t}"`);
+const definitiva = (url: string) => ROTAS_ENVIO.some(r => r.definitiva && r.re.test(url));
+assert.ok(definitiva('https://api.inhire.app/job-talents/public/abc123/talents'), 'POST do talento é prova de envio');
+assert.ok(definitiva('https://api.inhire.app/forms/form/submit'), 'submit do questionário é prova de envio');
+assert.ok(!definitiva('https://api.inhire.app/job-posts/public/pages/abc123'), 'leitura da vaga não é envio');
+assert.ok(!definitiva('https://api.typeform.com/responses'), 'resposta avulsa do Typeform não confirma a candidatura');
+
+const { falhaRepetivel, esperaDaTentativa, MAX_TENTATIVAS: MAXT } = await import('./falhas.ts');
+for (const m of ['Timeout 12000ms exceeded', 'net::ERR_CONNECTION_RESET', 'o questionário do InHire (form-app) não carregou: ficou em branco por 20 s', 'sem confirmação do InHire após o envio', 'Target page, context or browser has been closed'])
+  assert.ok(falhaRepetivel(m), `deveria tentar de novo: "${m}"`);
+for (const m of ['o InHire pediu verificação (captcha); envie esta vaga manualmente', 'formulário de candidatura não apareceu (vaga encerrada ou layout mudou)', 'perfil ou currículo principal ausente', 'o InHire recusou o envio (HTTP 400)', 'parei para não candidatar duas vezes', 'não sei preencher "X" (tipo desconhecido)'])
+  assert.ok(!falhaRepetivel(m), `não deveria repetir: "${m}"`);
+assert.deepEqual([1, 2, 3, 9].map(esperaDaTentativa), [2, 10, 30, 30]);
+assert.equal(MAXT, 3);
+console.log('✓ Envio: prova de rede, confirmação e política de nova tentativa');
+
 // 6) Perguntas parecidas
 assert.ok(similaridade('Possui CNH?', 'Você possui CNH categoria B?') > 0.55);
 assert.ok(similaridade('Nível de inglês', 'Qual seu nível de inglês?') > 0.55);

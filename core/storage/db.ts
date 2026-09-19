@@ -63,9 +63,16 @@ export const vagas = {
     vagas.salvar(nova);
     return nova;
   },
+  /** Próxima da fila, ignorando as que estão em espera de nova tentativa (falha transitória com backoff). */
   proximaNaFila(): Vaga | undefined {
-    const l = db.prepare("select dados from vagas where status = 'na_fila' order by posicao asc, score desc limit 1").get() as { dados: string } | undefined;
-    return l ? (JSON.parse(l.dados) as Vaga) : undefined;
+    const linhas = db.prepare("select dados from vagas where status = 'na_fila' order by posicao asc, score desc").all() as { dados: string }[];
+    const agora = Date.now();
+    for (const l of linhas) {
+      const v = JSON.parse(l.dados) as Vaga;
+      if (v.proximaTentativaEm && new Date(v.proximaTentativaEm).getTime() > agora) continue;
+      return v;
+    }
+    return undefined;
   },
   proximaPosicao(): number {
     const l = db.prepare('select coalesce(max(posicao), 0) + 1 as p from vagas').get() as { p: number };
