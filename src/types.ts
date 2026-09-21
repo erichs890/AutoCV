@@ -11,6 +11,7 @@ export interface Plataforma {
   sigla: string;
   cor: string; // classe Tailwind de fundo do logo
   disponivel: boolean; // só o InHire por enquanto
+  regiao: 'brasil' | 'global' | 'internacional' | 'ferramenta'; // agrupa a lista de Plataformas
   site?: string; // endereço oficial, para quando formos escrever o adapter
   nota?: string; // o que já se sabe da plataforma (idioma, acesso, tipo de conta) antes de integrar
 }

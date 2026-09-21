@@ -3,7 +3,7 @@ import { Building2, Plug, Plus, RadarIcon, Search, Trash2, Unplug } from 'lucide
 import Panel from '../components/Panel';
 import { useEstado } from '../estado';
 import { api, post } from '../api';
-import { PLATAFORMAS, tempoAtras } from '../dados';
+import { PLATAFORMAS, REGIOES, tempoAtras } from '../dados';
 
 export default function Plataformas() {
   const { estado, salvar, registrar } = useEstado();
@@ -69,70 +69,93 @@ export default function Plataformas() {
         </p>
       </div>
 
-      <ul className="grid grid-cols-4 gap-3.5 max-lg:grid-cols-2 max-md:grid-cols-1">
-        {PLATAFORMAS.map(p => {
-          const conexao = estado.conexoes[p.id];
-          return (
-            <li key={p.id} className={`flex min-h-[150px] flex-col gap-2.5 rounded-lg border border-panel-border bg-panel p-3 ${p.disponivel ? '' : 'opacity-60'}`} aria-disabled={!p.disponivel}>
-              <div className="flex items-center gap-2.5">
-                <span aria-hidden className={`flex size-[42px] shrink-0 items-center justify-center rounded-[10px] text-[17px] font-bold text-white ${p.disponivel ? p.cor : 'bg-ink-soft/50'}`}>
-                  {p.sigla}
-                </span>
-                <div className="flex flex-col items-start gap-1">
-                  <h3 className="text-[15px] font-bold">{p.nome}</h3>
-                  <span
-                    className={`inline-flex items-center gap-[5px] rounded-[9px] px-2 py-0.5 text-[10px] font-bold ${conexao ? 'bg-green-deep text-white' : 'border border-panel-border bg-page-bg text-ink'}`}
-                  >
-                    <span aria-hidden className="size-1.5 rounded-full bg-current" />
-                    {conexao ? 'Conectado' : p.disponivel ? 'Não conectado' : 'Indisponível'}
-                  </span>
-                </div>
-              </div>
-              <p className="text-xs text-ink-soft">
-                {p.id === 'inhire'
-                  ? conexao
-                    ? `${ativas.length} empresa(s) monitoradas · ${vagasAtivas} vagas ativas`
-                    : 'Páginas de vagas públicas, sem login. O robô descobre as empresas que usam InHire e acompanha as vagas delas.'
-                  : p.id === 'indeed'
-                    ? conexao
-                      ? `${estado.vagas.filter(v => v.plataforma === 'indeed' && v.status !== 'encerrada').length} vagas com candidatura simplificada · o robô usa janela visível`
-                      : 'Só vagas com "Candidatar-se facilmente". Você entra na sua conta numa janela do robô; o AutoCV não vê a senha. O Indeed bloqueia navegador oculto, então a janela sempre aparece.'
-                    : (p.nota ?? 'Integração ainda não implementada.')}
-              </p>
-              {p.id === 'indeed' && entrando && (
-                <p role="status" className="text-[11px] font-bold text-amber-ink">
-                  Entre na sua conta na janela do Indeed que abriu (até 5 min)...
-                </p>
-              )}
-              {p.id === 'indeed' && erroIndeed && (
-                <p role="alert" className="text-[11px] font-bold text-orange-deep">
-                  {erroIndeed}
-                </p>
-              )}
-              {!p.disponivel && p.site && (
-                <a href={p.site} target="_blank" rel="noreferrer" className="text-xs font-bold text-blue-deep underline underline-offset-2">
-                  Abrir o site
-                  <span className="sr-only"> de {p.nome}</span>
-                </a>
-              )}
-              <div className="mt-auto">
-                {conexao && p.disponivel ? (
-                  <button type="button" className="btn btn-secondary btn-sm w-full" onClick={() => desconectar(p.id)}>
-                    <Unplug size={14} aria-hidden />
-                    Desconectar
-                  </button>
-                ) : (
-                  <button type="button" className="btn btn-success btn-sm w-full" disabled={!p.disponivel || (p.id === 'indeed' && entrando)} onClick={p.id === 'indeed' ? conectarIndeed : conectar}>
-                    <Plug size={14} aria-hidden />
-                    {!p.disponivel ? 'Indisponível' : p.id === 'indeed' ? (entrando ? 'Aguardando login...' : 'Entrar e conectar') : 'Conectar'}
-                    <span className="sr-only"> {p.nome}</span>
-                  </button>
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+      {REGIOES.map(r => {
+        const doGrupo = PLATAFORMAS.filter(p => p.regiao === r.id);
+        if (!doGrupo.length) return null;
+        const ligadas = doGrupo.filter(p => estado.conexoes[p.id]).length;
+        return (
+          <section key={r.id} aria-labelledby={`regiao-${r.id}`} className="flex flex-col gap-2.5">
+            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 border-b border-panel-border pb-1.5">
+              <h2 id={`regiao-${r.id}`} className="text-[13px] font-bold">
+                {r.titulo}
+              </h2>
+              <span className="rounded-[9px] border border-panel-border bg-page-bg px-2 py-0.5 text-[10px] font-bold text-ink-soft tabular-nums">
+                {ligadas ? `${ligadas} de ${doGrupo.length} conectada(s)` : `${doGrupo.length} plataforma(s)`}
+              </span>
+              <p className="min-w-[200px] flex-1 text-[11px] text-ink-soft">{r.texto}</p>
+            </div>
+            <ul className="grid grid-cols-4 gap-3.5 max-lg:grid-cols-2 max-md:grid-cols-1">
+              {doGrupo.map(p => {
+                const conexao = estado.conexoes[p.id];
+                return (
+                  <li key={p.id} className={`flex min-h-[150px] flex-col gap-2.5 rounded-lg border border-panel-border bg-panel p-3 ${p.disponivel ? '' : 'opacity-60'}`} aria-disabled={!p.disponivel}>
+                    <div className="flex items-center gap-2.5">
+                      <span aria-hidden className={`flex size-[42px] shrink-0 items-center justify-center rounded-[10px] text-[17px] font-bold text-white ${p.disponivel ? p.cor : 'bg-ink-soft/50'}`}>
+                        {p.sigla}
+                      </span>
+                      <div className="flex flex-col items-start gap-1">
+                        <h3 className="text-[15px] font-bold">{p.nome}</h3>
+                        <span
+                          className={`inline-flex items-center gap-[5px] rounded-[9px] px-2 py-0.5 text-[10px] font-bold ${conexao ? 'bg-green-deep text-white' : 'border border-panel-border bg-page-bg text-ink'}`}
+                        >
+                          <span aria-hidden className="size-1.5 rounded-full bg-current" />
+                          {conexao ? 'Conectado' : p.disponivel ? 'Não conectado' : 'Indisponível'}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-ink-soft">
+                      {p.id === 'inhire'
+                        ? conexao
+                          ? `${ativas.length} empresa(s) monitoradas · ${vagasAtivas} vagas ativas`
+                          : 'Páginas de vagas públicas, sem login. O robô descobre as empresas que usam InHire e acompanha as vagas delas.'
+                        : p.id === 'indeed'
+                          ? conexao
+                            ? `${estado.vagas.filter(v => v.plataforma === 'indeed' && v.status !== 'encerrada').length} vagas com candidatura simplificada · o robô usa janela visível`
+                            : 'Só vagas com "Candidatar-se facilmente". Você entra na sua conta numa janela do robô; o AutoCV não vê a senha. O Indeed bloqueia navegador oculto, então a janela sempre aparece.'
+                          : (p.nota ?? 'Integração ainda não implementada.')}
+                    </p>
+                    {p.id === 'indeed' && entrando && (
+                      <p role="status" className="text-[11px] font-bold text-amber-ink">
+                        Entre na sua conta na janela do Indeed que abriu (até 5 min)...
+                      </p>
+                    )}
+                    {p.id === 'indeed' && erroIndeed && (
+                      <p role="alert" className="text-[11px] font-bold text-orange-deep">
+                        {erroIndeed}
+                      </p>
+                    )}
+                    {!p.disponivel && p.site && (
+                      <a href={p.site} target="_blank" rel="noreferrer" className="text-xs font-bold text-blue-deep underline underline-offset-2">
+                        Abrir o site
+                        <span className="sr-only"> de {p.nome}</span>
+                      </a>
+                    )}
+                    <div className="mt-auto">
+                      {conexao && p.disponivel ? (
+                        <button type="button" className="btn btn-secondary btn-sm w-full" onClick={() => desconectar(p.id)}>
+                          <Unplug size={14} aria-hidden />
+                          Desconectar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-success btn-sm w-full"
+                          disabled={!p.disponivel || (p.id === 'indeed' && entrando)}
+                          onClick={p.id === 'indeed' ? conectarIndeed : conectar}
+                        >
+                          <Plug size={14} aria-hidden />
+                          {!p.disponivel ? 'Indisponível' : p.id === 'indeed' ? (entrando ? 'Aguardando login...' : 'Entrar e conectar') : 'Conectar'}
+                          <span className="sr-only"> {p.nome}</span>
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
 
       {conexaoInhire && (
         <Panel

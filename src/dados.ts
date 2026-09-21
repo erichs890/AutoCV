@@ -5,6 +5,7 @@ import type { Plataforma, StatusVaga } from './types.ts';
 export const PLATAFORMAS: Plataforma[] = [
   {
     id: 'inhire',
+    regiao: 'brasil',
     nome: 'InHire',
     sigla: 'ih',
     cor: 'bg-purple',
@@ -13,9 +14,9 @@ export const PLATAFORMAS: Plataforma[] = [
     nota: 'Sem login: cada empresa publica em <empresa>.inhire.app/vagas e a API pública devolve vaga e formulário.',
   },
 
-  // ─── Brasil, generalistas ───────────────────────────────────────────────
   {
     id: 'linkedin',
+    regiao: 'global',
     nome: 'LinkedIn',
     sigla: 'in',
     cor: 'bg-blue-deep',
@@ -25,6 +26,7 @@ export const PLATAFORMAS: Plataforma[] = [
   },
   {
     id: 'gupy',
+    regiao: 'brasil',
     nome: 'Gupy',
     sigla: 'gu',
     cor: 'bg-blue-dark',
@@ -32,11 +34,12 @@ export const PLATAFORMAS: Plataforma[] = [
     site: 'https://portal.gupy.io',
     nota: 'Conta única do candidato reaproveitada em todas as empresas; formulário longo com perguntas eliminatórias.',
   },
-  { id: 'catho', nome: 'Catho', sigla: 'ca', cor: 'bg-orange-deep', disponivel: false, site: 'https://www.catho.com.br', nota: 'Assinatura paga para se candidatar.' },
-  { id: 'infojobs', nome: 'InfoJobs', sigla: 'ij', cor: 'bg-blue-dark', disponivel: false, site: 'https://www.infojobs.com.br' },
-  { id: 'vagas', nome: 'Vagas.com', sigla: 'vg', cor: 'bg-green-deep', disponivel: false, site: 'https://www.vagas.com.br' },
+  { id: 'catho', regiao: 'brasil', nome: 'Catho', sigla: 'ca', cor: 'bg-orange-deep', disponivel: false, site: 'https://www.catho.com.br', nota: 'Assinatura paga para se candidatar.' },
+  { id: 'infojobs', regiao: 'brasil', nome: 'InfoJobs', sigla: 'ij', cor: 'bg-blue-dark', disponivel: false, site: 'https://www.infojobs.com.br' },
+  { id: 'vagas', regiao: 'brasil', nome: 'Vagas.com', sigla: 'vg', cor: 'bg-green-deep', disponivel: false, site: 'https://www.vagas.com.br' },
   {
     id: 'indeed',
+    regiao: 'global',
     nome: 'Indeed',
     sigla: 'id',
     cor: 'bg-side-top',
@@ -44,13 +47,14 @@ export const PLATAFORMAS: Plataforma[] = [
     site: 'https://br.indeed.com',
     nota: 'Exige login manual uma vez; a sessão fica no perfil do navegador do robô.',
   },
-  { id: 'glassdoor', nome: 'Glassdoor', sigla: 'gd', cor: 'bg-green-deep', disponivel: false, site: 'https://www.glassdoor.com.br' },
-  { id: 'trampos', nome: 'Trampos.co', sigla: 'tr', cor: 'bg-orange-deep', disponivel: false, site: 'https://trampos.co' },
+  { id: 'glassdoor', regiao: 'global', nome: 'Glassdoor', sigla: 'gd', cor: 'bg-green-deep', disponivel: false, site: 'https://www.glassdoor.com.br' },
+  { id: 'trampos', regiao: 'brasil', nome: 'Trampos.co', sigla: 'tr', cor: 'bg-orange-deep', disponivel: false, site: 'https://trampos.co' },
 
-  // ─── Reservadas em 20/09/2026 (lista do Erich): remoto e internacional ──
-  // Ainda sem adapter. Ficam registradas para não se perderem e para a pesquisa de viabilidade começar daqui.
+  // Reservadas em 20/09/2026 (lista do Erich). Sem adapter ainda: ficam registradas para não se perderem
+  // e para a pesquisa de viabilidade começar daqui. O agrupamento da tela vem de .
   {
     id: 'remoteok',
+    regiao: 'internacional',
     nome: 'RemoteOK',
     sigla: 'ro',
     cor: 'bg-green-deep',
@@ -60,6 +64,7 @@ export const PLATAFORMAS: Plataforma[] = [
   },
   {
     id: 'remotive',
+    regiao: 'internacional',
     nome: 'Remotive',
     sigla: 'rv',
     cor: 'bg-blue-deep',
@@ -69,6 +74,7 @@ export const PLATAFORMAS: Plataforma[] = [
   },
   {
     id: 'wellfound',
+    regiao: 'internacional',
     nome: 'Wellfound',
     sigla: 'wf',
     cor: 'bg-side-top',
@@ -78,6 +84,7 @@ export const PLATAFORMAS: Plataforma[] = [
   },
   {
     id: 'workingnomads',
+    regiao: 'internacional',
     nome: 'Working Nomads',
     sigla: 'wn',
     cor: 'bg-aqua',
@@ -87,6 +94,7 @@ export const PLATAFORMAS: Plataforma[] = [
   },
   {
     id: 'jsremotely',
+    regiao: 'internacional',
     nome: 'JS Remotely',
     sigla: 'js',
     cor: 'bg-amber',
@@ -94,9 +102,19 @@ export const PLATAFORMAS: Plataforma[] = [
     site: 'https://jsremotely.com',
     nota: 'Nicho JavaScript remoto; volume pequeno, quase sempre redireciona para a empresa.',
   },
-  { id: 'powertofly', nome: 'PowerToFly', sigla: 'pf', cor: 'bg-purple', disponivel: false, site: 'https://powertofly.com', nota: 'Foco em diversidade; exige conta e perfil completo.' },
+  {
+    id: 'powertofly',
+    regiao: 'internacional',
+    nome: 'PowerToFly',
+    sigla: 'pf',
+    cor: 'bg-purple',
+    disponivel: false,
+    site: 'https://powertofly.com',
+    nota: 'Foco em diversidade; exige conta e perfil completo.',
+  },
   {
     id: 'flexjobs',
+    regiao: 'internacional',
     nome: 'FlexJobs',
     sigla: 'fj',
     cor: 'bg-blue-dark',
@@ -106,6 +124,7 @@ export const PLATAFORMAS: Plataforma[] = [
   },
   {
     id: 'toptal',
+    regiao: 'ferramenta',
     nome: 'Toptal',
     sigla: 'tt',
     cor: 'bg-blue-deep',
@@ -115,6 +134,7 @@ export const PLATAFORMAS: Plataforma[] = [
   },
   {
     id: 'jobhunt',
+    regiao: 'ferramenta',
     nome: 'Job Hunt',
     sigla: 'jh',
     cor: 'bg-ink-soft',
@@ -124,6 +144,7 @@ export const PLATAFORMAS: Plataforma[] = [
   },
   {
     id: 'kickresume',
+    regiao: 'ferramenta',
     nome: 'Kickresume',
     sigla: 'kr',
     cor: 'bg-orange-deep',
@@ -131,6 +152,14 @@ export const PLATAFORMAS: Plataforma[] = [
     site: 'https://www.kickresume.com',
     nota: 'Ferramenta de montar currículo, não plataforma de candidatura. Só faria sentido como fonte de modelo de CV.',
   },
+];
+
+/** Grupos da tela de Plataformas: separa o que é do Brasil, o que é global e o que é vaga gringa. */
+export const REGIOES: { id: Plataforma['regiao']; titulo: string; texto: string }[] = [
+  { id: 'brasil', titulo: 'Brasil', texto: 'Vagas publicadas por empresas brasileiras, em português.' },
+  { id: 'global', titulo: 'Globais', texto: 'Operam no Brasil e no exterior; a mesma conta serve para os dois.' },
+  { id: 'internacional', titulo: 'Internacionais — EUA e Europa', texto: 'Vagas remotas em inglês. Os países que você aceita ficam em Configurações › Meus Dados.' },
+  { id: 'ferramenta', titulo: 'Não são murais de vaga', texto: 'Ficam aqui para não serem procuradas de novo: processo seletivo próprio, conteúdo de carreira ou montador de currículo.' },
 ];
 
 export const getPlataforma = (id: string): Plataforma => PLATAFORMAS.find(p => p.id === id) ?? PLATAFORMAS[0];
