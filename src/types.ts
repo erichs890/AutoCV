@@ -11,6 +11,8 @@ export interface Plataforma {
   sigla: string;
   cor: string; // classe Tailwind de fundo do logo
   disponivel: boolean; // só o InHire por enquanto
+  site?: string; // endereço oficial, para quando formos escrever o adapter
+  nota?: string; // o que já se sabe da plataforma (idioma, acesso, tipo de conta) antes de integrar
 }
 
 export interface Envio {
@@ -87,16 +89,10 @@ export interface Conexao {
 
 export interface ConfigAutomacao {
   configurada: boolean;
-  plataformas: string[];
-  curriculo: number | null;
   area: string;
-  cargo: string;
   senioridade: string; // '' = a detectada no currículo
-  local: string;
-  salarioMin: number;
-  salarioMax: number;
   regimes: string[]; // remoto | hibrido | presencial
-  intervalo: number; // minutos entre candidaturas
+  intervaloSegundos: number; // espera entre uma candidatura e a próxima
   limiteDiario: number;
   janela: string; // "08:00-20:00"
   modo: 'automatico' | 'manual';
@@ -106,6 +102,9 @@ export interface ConfigAutomacao {
   ensaio: boolean; // preenche tudo, não envia
   mostrarNavegador: boolean;
   scoreMinimo: number; // 0–100
+  cargoRigido: boolean; // só vagas da mesma função que a sua passam com nota cheia
+  presencialSoNaMinhaCidade: boolean; // presencial/híbrido fora da sua cidade nem entra na lista
+  modoPerguntas: 'manual' | 'sem_piedade'; // manual: pergunta nova pausa para você · sem_piedade: a IA responde e segue
 }
 
 // ─── Descoberta de vagas (InHire) ────────────────────────────
@@ -163,9 +162,7 @@ export interface ResumoFormulario {
   incomum: boolean; // campo de tipo desconhecido ou muitas etapas: vale conferir a captura
 }
 
-export type Pendencia =
-  | { tipo: 'pergunta'; pergunta: PerguntaExtra }
-  | { tipo: 'aprovacao'; original: string; adaptado: string; diff: string[] };
+export type Pendencia = { tipo: 'pergunta'; pergunta: PerguntaExtra } | { tipo: 'aprovacao'; original: string; adaptado: string; diff: string[] };
 
 export interface Vaga {
   id: string;

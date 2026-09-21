@@ -5,7 +5,9 @@ export const soDigitos = (v: string) => v.replace(/\D/g, '');
 
 /** (11) 91234-5678 ou (11) 3123-4567; aceita colar com +55 na frente. */
 export function mascaraTelefone(v: string): string {
-  const d = soDigitos(v).replace(/^55(?=\d{10,11}$)/, '').slice(0, 11);
+  const d = soDigitos(v)
+    .replace(/^55(?=\d{10,11}$)/, '')
+    .slice(0, 11);
   if (d.length <= 2) return d ? `(${d}` : '';
   const ddd = d.slice(0, 2);
   const resto = d.slice(2);
@@ -16,14 +18,19 @@ export function mascaraTelefone(v: string): string {
 
 /** R$ 4.500 (reais inteiros; o núcleo já lê este formato em pretensaoEmReais). */
 export function mascaraMoeda(v: string): string {
-  const d = soDigitos(v.replace(/,\d{1,2}\s*$/, '')).replace(/^0+/, '').slice(0, 9); // 'R$ 4.500,00' guardado antes da máscara → 4500
+  const d = soDigitos(v.replace(/,\d{1,2}\s*$/, ''))
+    .replace(/^0+/, '')
+    .slice(0, 9); // 'R$ 4.500,00' guardado antes da máscara → 4500
   return d ? `R$ ${Number(d).toLocaleString('pt-BR')}` : '';
 }
 
 /** 123.456.789-09 */
 export function mascaraCPF(v: string): string {
   const d = soDigitos(v).slice(0, 11);
-  return d.replace(/^(\d{3})(\d)/, '$1.$2').replace(/^(\d{3}\.\d{3})(\d)/, '$1.$2').replace(/^(\d{3}\.\d{3}\.\d{3})(\d)/, '$1-$2');
+  return d
+    .replace(/^(\d{3})(\d)/, '$1.$2')
+    .replace(/^(\d{3}\.\d{3})(\d)/, '$1.$2')
+    .replace(/^(\d{3}\.\d{3}\.\d{3})(\d)/, '$1-$2');
 }
 
 export const TELEFONE_PATTERN = '\\(\\d{2}\\) \\d{4,5}-\\d{4}';

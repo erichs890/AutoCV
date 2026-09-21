@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { Check, Eye, EyeOff, RadarIcon, Search } from 'lucide-react';
+import { Eye, EyeOff, RadarIcon, Search } from 'lucide-react';
+import { BotaoSalvar } from '../components/BotaoSalvar';
 import { useEstado } from '../estado';
 import { post } from '../api';
 import { tempoAtras } from '../dados';
@@ -67,12 +68,14 @@ export default function ConfigDescoberta({ onSalvar }: { onSalvar: (t: string) =
             </p>
           </div>
         </div>
-        <p className="text-[11px] text-ink-soft">A varredura roda em segundo plano mesmo com o robô parado, com pausa de 2 s entre empresas. Vagas já conhecidas não são reconsultadas; as que sumiram são marcadas como encerradas.</p>
+        <p className="text-[11px] text-ink-soft">
+          A varredura roda em segundo plano mesmo com o robô parado, com pausa de 2 s entre empresas. Vagas já conhecidas não são reconsultadas; as que sumiram são marcadas como encerradas.
+        </p>
       </section>
 
       <section className="flex flex-col gap-3 border-t border-panel-border pt-3.5">
         <label className="flex items-center gap-3">
-          <input type="checkbox" role="switch" checked={fonteB} onChange={e => setFonteB(e.target.checked)} className="switch" />
+          <input type="checkbox" checked={fonteB} onChange={e => setFonteB(e.target.checked)} className="switch" />
           <span>
             <span className="block text-sm font-bold">Descobrir empresas novas automaticamente (1x por dia)</span>
             <span className="block text-[11px] text-ink-soft">
@@ -85,8 +88,21 @@ export default function ConfigDescoberta({ onSalvar }: { onSalvar: (t: string) =
           <label>
             <span className="label">Chave da Google Custom Search API {d.googleKeyDefinida && <span className="font-normal">— guardada; cole outra para trocar</span>}</span>
             <span className="relative block">
-              <input type={mostrar ? 'text' : 'password'} value={chave} onChange={e => setChave(e.target.value)} autoComplete="off" spellCheck={false} placeholder={d.googleKeyDefinida ? '••••••••••••' : 'AIza...'} className="field pr-9 font-mono" />
-              <button type="button" aria-label={mostrar ? 'Ocultar chave' : 'Mostrar chave'} onClick={() => setMostrar(m => !m)} className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-ink-soft hover:text-ink">
+              <input
+                type={mostrar ? 'text' : 'password'}
+                value={chave}
+                onChange={e => setChave(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={d.googleKeyDefinida ? '••••••••••••' : 'AIza...'}
+                className="field pr-9 font-mono"
+              />
+              <button
+                type="button"
+                aria-label={mostrar ? 'Ocultar chave' : 'Mostrar chave'}
+                onClick={() => setMostrar(m => !m)}
+                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-ink-soft hover:text-ink"
+              >
                 {mostrar ? <EyeOff size={15} aria-hidden /> : <Eye size={15} aria-hidden />}
               </button>
             </span>
@@ -94,7 +110,9 @@ export default function ConfigDescoberta({ onSalvar }: { onSalvar: (t: string) =
           <label>
             <span className="label">ID do mecanismo de busca (cx)</span>
             <input value={cx} onChange={e => setCx(e.target.value)} placeholder="ex.: a1b2c3d4e5f6g7h8i" className="field font-mono" />
-            <span className="mt-1 block text-[11px] text-ink-soft">Crie em programmablesearchengine.google.com com "pesquisar toda a web"; a chave vem do Google Cloud (Custom Search JSON API, 100 consultas grátis por dia).</span>
+            <span className="mt-1 block text-[11px] text-ink-soft">
+              Crie em programmablesearchengine.google.com com "pesquisar toda a web"; a chave vem do Google Cloud (Custom Search JSON API, 100 consultas grátis por dia).
+            </span>
           </label>
         </div>
         {resultado && (
@@ -107,15 +125,14 @@ export default function ConfigDescoberta({ onSalvar }: { onSalvar: (t: string) =
 
       <div className="sticky bottom-0 mt-auto flex flex-wrap items-center gap-2.5 rounded-lg border border-panel-border bg-panel px-3.5 py-3">
         <RadarIcon size={16} aria-hidden className="shrink-0 text-ink-soft" />
-        <p className="flex-1 text-xs text-ink-soft">Revarredura a cada {d.intervaloHoras} h · descoberta automática {d.fonteB ? 'ligada' : 'desligada'}</p>
+        <p className="flex-1 text-xs text-ink-soft">
+          Revarredura a cada {d.intervaloHoras} h · descoberta automática {d.fonteB ? 'ligada' : 'desligada'}
+        </p>
         <button type="button" className="btn btn-secondary" disabled={buscando || d.descobrindo} onClick={buscarAgora}>
           <Search size={16} aria-hidden />
           {d.descobrindo ? 'Procurando...' : 'Descobrir empresas agora'}
         </button>
-        <button type="submit" className="btn btn-success">
-          <Check size={16} aria-hidden />
-          Salvar
-        </button>
+        <BotaoSalvar>Salvar</BotaoSalvar>
       </div>
     </form>
   );

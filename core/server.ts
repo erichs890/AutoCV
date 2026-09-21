@@ -8,17 +8,17 @@ import { PORTA, DIRS } from './config.ts';
 import { eventos, emitir, type Evento } from './events.ts';
 import { apagarTudo, kv, log, vagas } from './storage/db.ts';
 import { ler, montarEstado, salvarParcial } from './estado.ts';
-import { buscarVagas, candidatarAgora, decidirPreview, iniciarLaco, ligarRobo, removerDaFila, repontuar, responder } from './queue.ts';
+import { buscarVagas, candidatarAgora, decidirPreview, enfileirarCompativeis, iniciarLaco, ligarRobo, limparDuplicatasDaFila, removerDaFila, repontuar, repontuarComIA, responder } from './queue.ts';
 import { pdfParaMarkdown } from './resume/pdfToMd.ts';
 import { analisarCurriculo } from './resume/analyzer.ts';
 import { markdownParaPdf } from './resume/mdToPdf.ts';
 import { gerarAdaptacao } from './candidatura.ts';
 import { fecharNavegador } from './browser.ts';
-import { salvarIA, testarIA } from './ia.ts';
+import { migrarModelo, salvarIA, testarIA } from './ia.ts';
 import { adicionarEmpresa, importarSeed, migrarTenantsAntigos, salvarDescoberta } from './platforms/inhire/discovery.ts';
 import { empresas } from './storage/db.ts';
 
-const SCORE_VERSAO = 3; // suba ao mudar calcularScore: as vagas abertas são repontuadas ao iniciar
+const SCORE_VERSAO = 9; // suba ao mudar calcularScore: as vagas abertas são repontuadas ao iniciar
 import { buscarEmpresas } from './queue.ts';
 
 const registrar = log.registrar;
@@ -57,6 +57,37 @@ async function receberCurriculo(nome: string, bytes: Buffer): Promise<Arquivo> {
   return arquivo;
 }
 
+/**
+ * O perfil de busca (área, cargos, competências, senioridade) é calculado no upload e fica gravado junto ao
+ * currículo. Quando a análise melhora, o que está gravado continua velho — foi assim que um currículo de
+ * "Full Stack há mais de 3 anos" seguiu marcado como Estágio depois da correção. Recalcula na subida do núcleo.
+ */
+/** `intervalo` era em minutos e virou `intervaloSegundos`: sem converter, 8 minutos viraria 8 segundos. */
+function migrarIntervalo() {
+  const salvo = kv.get<Record<string, unknown>>('automacao', {});
+  if (typeof salvo.intervalo !== 'number' || salvo.intervaloSegundos !== undefined) return;
+  const segundos = Math.round(salvo.intervalo * 60);
+  kv.set('automacao', { ...salvo, intervaloSegundos: segundos });
+  registrar('info', `Intervalo entre candidaturas convertido de ${salvo.intervalo} min para ${segundos} s.`);
+}
+
+function migrarPerfilBusca(): boolean {
+  const lista = ler.curriculos();
+  let mudou = false;
+  const nova = lista.map(c => {
+    if (!c.markdown) return c;
+    const perfilBusca = analisarCurriculo(c.markdown);
+    if (JSON.stringify(perfilBusca) === JSON.stringify(c.perfilBusca)) return c;
+    mudou = true;
+    if (perfilBusca.senioridade !== c.perfilBusca?.senioridade) {
+      registrar('info', `Currículo ${c.nome} reanalisado: senioridade ${c.perfilBusca?.senioridade ?? '—'} → ${perfilBusca.senioridade}.`);
+    }
+    return { ...c, perfilBusca };
+  });
+  if (mudou) kv.set('curriculos', nova);
+  return mudou;
+}
+
 const rotas: Record<string, (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<void> | void> = {
   'GET /estado': (_r, res) => json(res, 200, montarEstado()),
   'POST /estado': async (req, res) => {
@@ -65,8 +96,11 @@ const rotas: Record<string, (req: IncomingMessage, res: ServerResponse, url: URL
     const cidadeAntes = ler.perfil()?.cidade ?? '';
     salvarParcial(parcial);
     const a = parcial.automacao;
-    const filtrosMudaram = a && (a.area !== antes.area || a.cargo !== antes.cargo || a.senioridade !== antes.senioridade || a.scoreMinimo !== antes.scoreMinimo);
+    const filtrosMudaram = a && (a.area !== antes.area || a.senioridade !== antes.senioridade || a.scoreMinimo !== antes.scoreMinimo);
     if (filtrosMudaram || (parcial.perfil && (parcial.perfil.cidade ?? '') !== cidadeAntes)) repontuar();
+    // Trocou para automático (ou mexeu nos filtros/limite) com o robô ligado: a fila é reavaliada na hora,
+    // senão salvar a configuração não teria efeito nenhum até a próxima varredura.
+    if (a && (filtrosMudaram || a.modo !== antes.modo || a.regimes.join() !== antes.regimes.join() || a.limiteDiario !== antes.limiteDiario)) enfileirarCompativeis('configuração salva');
     json(res, 200, montarEstado());
   },
   'POST /log': async (req, res) => {
@@ -85,7 +119,10 @@ const rotas: Record<string, (req: IncomingMessage, res: ServerResponse, url: URL
     const lista = ler.curriculos();
     const alvo = lista.find(c => c.id === id);
     if (alvo?.caminho) await rm(alvo.caminho, { force: true });
-    kv.set('curriculos', lista.filter(c => c.id !== id));
+    kv.set(
+      'curriculos',
+      lista.filter(c => c.id !== id),
+    );
     emitir({ tipo: 'estado' });
     json(res, 200, { ok: true });
   },
@@ -134,6 +171,12 @@ const rotas: Record<string, (req: IncomingMessage, res: ServerResponse, url: URL
   'POST /descoberta/buscar': (_r, res) => {
     // Demora minutos (Common Crawl + validação); roda em segundo plano e o front acompanha por eventos/log
     void buscarEmpresas().catch(e => registrar('alerta', `Descoberta de empresas falhou: ${(e as Error).message}`));
+    json(res, 200, { ok: true });
+  },
+  'POST /repontuar-ia': async (req, res) => {
+    // Demora minutos (uma chamada a cada 6 vagas); roda em segundo plano e o front acompanha pelo log
+    const { limite } = JSON.parse((await corpo(req)).toString('utf8') || '{}');
+    void repontuarComIA(Number(limite) || 50).catch(e => registrar('alerta', `Reavaliação por IA falhou: ${(e as Error).message}`));
     json(res, 200, { ok: true });
   },
   'POST /candidatar': async (req, res) => {
@@ -233,11 +276,18 @@ createServer(async (req, res) => {
 }).listen(PORTA, '127.0.0.1', () => {
   console.log(`AutoCV núcleo em http://localhost:${PORTA} — dados em ${DIRS.curriculos.replace(/[\\/]curriculos$/, '')}`);
   migrarTenantsAntigos(registrar);
+  migrarModelo(registrar);
   if (ler.conexoes().inhire) importarSeed(registrar);
-  if (kv.get<number>('scoreVersao', 0) < SCORE_VERSAO) {
-    repontuar(); // vagas gravadas por versões anteriores do score
+  migrarIntervalo();
+  // Perfil recalculado muda a compatibilidade de todas as vagas: repontua junto, sem esperar a próxima varredura
+  const perfilMudou = migrarPerfilBusca();
+  if (perfilMudou || kv.get<number>('scoreVersao', 0) < SCORE_VERSAO) {
+    repontuar(); // vagas gravadas por versões anteriores do score ou de um perfil desatualizado
     kv.set('scoreVersao', SCORE_VERSAO);
   }
+  // Higiene da fila na subida: publicação repetida da mesma vaga pode ter entrado antes desta regra existir,
+  // e com o robô pausado o enfileiramento (que também limpa) nem roda.
+  limparDuplicatasDaFila();
   iniciarLaco();
 });
 

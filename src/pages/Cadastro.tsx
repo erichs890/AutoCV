@@ -28,7 +28,9 @@ export default function Cadastro() {
       return;
     }
     const dados = new FormData(e.currentTarget);
-    const linkedin = String(dados.get('linkedin')).trim().replace(/^(?!https?:\/\/)/, 'https://'); // aceita "linkedin.com/in/x" e completa o https://
+    const linkedin = String(dados.get('linkedin'))
+      .trim()
+      .replace(/^(?!https?:\/\/)/, 'https://'); // aceita "linkedin.com/in/x" e completa o https://
     setEnviando(true);
     try {
       await enviarCurriculo(arquivo); // o núcleo guarda o PDF, extrai o texto e monta o perfil de busca
@@ -63,7 +65,7 @@ export default function Cadastro() {
 
           <label>
             <span className="label">Nome completo</span>
-            <input name="nome" type="text" required autoFocus autoComplete="name" placeholder="Como aparece no currículo" className="field h-9" />
+            <input name="nome" type="text" required autoComplete="name" placeholder="Como aparece no currículo" className="field h-9" />
           </label>
           <label>
             <span className="label">E-mail</span>
@@ -71,7 +73,18 @@ export default function Cadastro() {
           </label>
           <label>
             <span className="label">Telefone</span>
-            <input name="telefone" type="tel" required autoComplete="tel" inputMode="numeric" placeholder="(11) 90000-0000" pattern={TELEFONE_PATTERN} title="DDD e número, ex.: (11) 91234-5678" onInput={mascarar(mascaraTelefone)} className="field h-9" />
+            <input
+              name="telefone"
+              type="tel"
+              required
+              autoComplete="tel"
+              inputMode="numeric"
+              placeholder="(11) 90000-0000"
+              pattern={TELEFONE_PATTERN}
+              title="DDD e número, ex.: (11) 91234-5678"
+              onInput={mascarar(mascaraTelefone)}
+              className="field h-9"
+            />
           </label>
           <label>
             <span className="label">Link do seu perfil no LinkedIn</span>
@@ -91,6 +104,7 @@ export default function Cadastro() {
 
           <div>
             <span className="label">Currículo</span>
+            {/* biome-ignore lint/a11y/noStaticElementInteractions: arrastar e um atalho; o <input type=file> dentro da area continua sendo o caminho de teclado */}
             <div
               onDragOver={e => {
                 e.preventDefault();

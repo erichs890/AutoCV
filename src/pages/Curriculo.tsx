@@ -48,6 +48,7 @@ export default function Curriculo() {
     <div className="stagger grid grid-cols-[1fr_340px] items-start gap-4 max-lg:grid-cols-1">
       <div className="flex flex-col gap-4">
         <Panel icon={CloudUpload} title="Enviar currículo" bodyClassName="flex flex-col gap-3 p-3.5">
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: arrastar e um atalho; o <input type=file> dentro da area continua sendo o caminho de teclado */}
           <div
             onDragOver={e => {
               e.preventDefault();
@@ -128,16 +129,16 @@ export default function Curriculo() {
                   <span className="text-xs text-ink-soft">nenhuma do dicionário — a busca vai se apoiar só nos cargos</span>
                 )}
               </div>
-              <p className="text-[11px] text-ink-soft">
-                É com isto que o robô escolhe e pontua as vagas. A adaptação por vaga só usa competências que já estão aqui — nada é inventado.
-              </p>
+              <p className="text-[11px] text-ink-soft">É com isto que o robô escolhe e pontua as vagas. A adaptação por vaga só usa competências que já estão aqui — nada é inventado.</p>
               <button type="button" className="btn btn-secondary btn-sm self-start" onClick={() => setVerTexto(v => !v)}>
                 {verTexto ? 'Ocultar texto extraído' : 'Ver texto extraído do PDF'}
               </button>
               {verTexto && <pre className="max-h-[320px] overflow-auto rounded-lg border border-panel-border bg-page-bg p-3 font-mono text-[11px] whitespace-pre-wrap">{principal?.markdown}</pre>}
             </>
           ) : (
-            <p className="py-2 text-center text-xs text-ink-soft">{principal ? 'Não consegui extrair texto deste arquivo. Envie o currículo em PDF com texto (não escaneado).' : 'Envie um currículo em PDF para montar o perfil.'}</p>
+            <p className="py-2 text-center text-xs text-ink-soft">
+              {principal ? 'Não consegui extrair texto deste arquivo. Envie o currículo em PDF com texto (não escaneado).' : 'Envie um currículo em PDF para montar o perfil.'}
+            </p>
           )}
         </Panel>
       </div>

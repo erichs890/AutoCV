@@ -1,11 +1,30 @@
 import { useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { BotaoSalvar, SalvoEm } from '../components/BotaoSalvar';
 import {
-  Accessibility, Bell, Briefcase, Calendar, Car, Check, CircleCheck, DollarSign, House, Info, Languages,
-  MessageSquare, Plus, RadarIcon, ShieldAlert, ShieldCheck, Sparkles, Trash2, User, X, type LucideIcon,
+  Accessibility,
+  Bell,
+  Briefcase,
+  Calendar,
+  Car,
+  CircleCheck,
+  DollarSign,
+  House,
+  Info,
+  Languages,
+  MessageSquare,
+  Plus,
+  RadarIcon,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  User,
+  X,
+  type LucideIcon,
 } from 'lucide-react';
 import { useEstado, type Perfil } from '../estado';
-import { NOTIFICACOES, iniciais } from '../dados';
+import { AREAS, NIVEIS, NOTIFICACOES, iniciais } from '../dados';
 import { CPF_PATTERN, TELEFONE_PATTERN, mascaraCPF, mascaraMoeda, mascaraTelefone, mascarar } from '../mascaras';
 import ConfigIA from './ConfigIA';
 import ConfigDescoberta from './ConfigDescoberta';
@@ -32,12 +51,18 @@ const iconesPergunta: Record<string, LucideIcon> = {
   pcd: Accessibility,
 };
 
+const DURACAO_AVISO = 4000;
+
 export default function Configuracoes() {
   const [params, setParams] = useSearchParams();
   const [toast, setToast] = useState('');
+  const [salvoEm, setSalvoEm] = useState(0);
   const timer = useRef<number>(undefined);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
-  const indice = Math.max(0, abas.findIndex(a => a.id === params.get('tab')));
+  const indice = Math.max(
+    0,
+    abas.findIndex(a => a.id === params.get('tab')),
+  );
   const atual = abas[indice].id;
 
   function ir(i: number) {
@@ -55,8 +80,9 @@ export default function Configuracoes() {
 
   function avisar(texto: string) {
     setToast(texto);
+    setSalvoEm(Date.now()); // acende o "Salvo!" no próprio botão, onde o olho do usuário está
     clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setToast(''), 4000);
+    timer.current = window.setTimeout(() => setToast(''), DURACAO_AVISO);
   }
 
   return (
@@ -86,22 +112,32 @@ export default function Configuracoes() {
       </div>
 
       <div role="tabpanel" id="painel-aba" aria-labelledby={`tab-${atual}`} className="relative flex flex-1 flex-col rounded-lg border border-panel-border bg-panel p-[18px]">
+        {/* Fixo no canto de baixo: fica ao lado do botão Salvar, visível mesmo em formulário longo e rolado */}
         {toast && (
-          <div role="status" className="absolute top-3 right-[18px] z-10 flex items-center gap-[9px] rounded-[9px] bg-green-deep px-3.5 py-2.5 text-[13px] font-bold text-white shadow-lg">
-            <CircleCheck size={20} aria-hidden />
-            {toast}
-            <button type="button" aria-label="Fechar aviso" onClick={() => setToast('')} className="rounded p-0.5 hover:bg-white/15">
-              <X size={14} aria-hidden />
-            </button>
+          <div
+            role="status"
+            key={salvoEm}
+            className="fixed right-6 bottom-6 z-50 overflow-hidden rounded-[9px] bg-green-deep text-[13px] font-bold text-white shadow-lg [animation:aviso-entra_0.35s_cubic-bezier(0.2,0.7,0.2,1)_both] max-md:right-3 max-md:bottom-3"
+          >
+            <div className="flex items-center gap-[9px] px-3.5 py-2.5">
+              <CircleCheck size={20} aria-hidden className="[animation:selo-ok_0.4s_cubic-bezier(0.2,0.7,0.2,1)_both]" />
+              {toast}
+              <button type="button" aria-label="Fechar aviso" onClick={() => setToast('')} className="rounded p-0.5 hover:bg-white/15">
+                <X size={14} aria-hidden />
+              </button>
+            </div>
+            <span aria-hidden className="block h-[3px] origin-left bg-white/45" style={{ animation: `aviso-tempo ${DURACAO_AVISO}ms linear both` }} />
           </div>
         )}
-        {atual === 'dados' && <AbaDados onSalvar={avisar} />}
-        {atual === 'perguntas' && <AbaPerguntas onSalvar={avisar} />}
-        {atual === 'sensiveis' && <ConfigSensiveis onSalvar={avisar} />}
-        {atual === 'ia' && <ConfigIA onSalvar={avisar} />}
-        {atual === 'descoberta' && <ConfigDescoberta onSalvar={avisar} />}
-        {atual === 'notificacoes' && <AbaNotificacoes onSalvar={avisar} />}
-        {atual === 'conta' && <AbaPrivacidade />}
+        <SalvoEm.Provider value={salvoEm}>
+          {atual === 'dados' && <AbaDados onSalvar={avisar} />}
+          {atual === 'perguntas' && <AbaPerguntas onSalvar={avisar} />}
+          {atual === 'sensiveis' && <ConfigSensiveis onSalvar={avisar} />}
+          {atual === 'ia' && <ConfigIA onSalvar={avisar} />}
+          {atual === 'descoberta' && <ConfigDescoberta onSalvar={avisar} />}
+          {atual === 'notificacoes' && <AbaNotificacoes onSalvar={avisar} />}
+          {atual === 'conta' && <AbaPrivacidade />}
+        </SalvoEm.Provider>
       </div>
     </div>
   );
@@ -126,19 +162,29 @@ function BarraSalvar({ texto, cancelar = true }: { texto: string; cancelar?: boo
           Cancelar
         </button>
       )}
-      <button type="submit" className="btn btn-success">
-        <Check size={16} aria-hidden />
-        Salvar alterações
-      </button>
+      <BotaoSalvar />
     </div>
   );
 }
 
-function Campo({ label, children }: { label: string; children: ReactNode }) {
+/**
+ * Campo do formulário. `exigido` marca com * o que o AutoCV precisa para acertar: ou porque as vagas do
+ * InHire pedem (LinkedIn, pretensão), ou porque é o que decide a compatibilidade (senioridade, área, cargo).
+ */
+function Campo({ label, children, exigido, ajuda }: { label: string; children: ReactNode; exigido?: boolean; ajuda?: string }) {
   return (
+    // biome-ignore lint/a11y/noLabelWithoutControl: `children` e sempre o controle do campo (input/select)
     <label>
-      <span className="label">{label}</span>
+      <span className="label">
+        {label}
+        {exigido && (
+          <span className="ml-0.5 text-orange-deep" title="Necessário para a compatibilidade sair certa">
+            *
+          </span>
+        )}
+      </span>
       {children}
+      {ajuda && <span className="mt-1 block text-[11px] text-ink-soft">{ajuda}</span>}
     </label>
   );
 }
@@ -148,13 +194,26 @@ function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
   const p = estado.perfil!;
   const [sujo, setSujo] = useState(false);
 
+  const perfilBusca = estado.curriculos[0]?.perfilBusca;
+
   async function enviar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const dados = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
-    const { regimePreferido, ...perfil } = dados;
-    await salvar({ perfil: { ...p, ...(perfil as unknown as Perfil) }, automacao: { ...estado.automacao, regimePreferido: regimePreferido as 'CLT' | 'PJ' | 'perguntar' } });
+    // senioridade/área/rigor moram na automação (o score usa); o cargo desejado fica só no perfil
+    const { regimePreferido, senioridade, area, cargoRigido, presencialSoNaMinhaCidade, ...perfil } = dados;
+    await salvar({
+      perfil: { ...p, ...(perfil as unknown as Perfil) },
+      automacao: {
+        ...estado.automacao,
+        regimePreferido: regimePreferido as 'CLT' | 'PJ' | 'perguntar',
+        senioridade,
+        area,
+        cargoRigido: cargoRigido === 'sim',
+        presencialSoNaMinhaCidade: presencialSoNaMinhaCidade === 'on',
+      },
+    });
     setSujo(false);
-    onSalvar('Dados salvos.');
+    onSalvar('Dados salvos. As vagas foram repontuadas com o seu perfil.');
   }
 
   return (
@@ -169,11 +228,32 @@ function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
           {p.cargo && <p className="-mt-1 text-[11px] text-ink-soft">{p.cargo}</p>}
         </div>
         <div className="grid flex-1 grid-cols-2 content-start gap-3 max-md:grid-cols-1">
-          <Campo label="Nome completo"><input name="nome" autoComplete="name" defaultValue={p.nome} required className="field" /></Campo>
-          <Campo label="E-mail"><input name="email" type="email" autoComplete="email" defaultValue={p.email} required className="field" /></Campo>
-          <Campo label="Celular com DDD"><input name="telefone" type="tel" autoComplete="tel" inputMode="numeric" defaultValue={mascaraTelefone(p.telefone)} required pattern={TELEFONE_PATTERN} title="DDD e número, ex.: (11) 91234-5678" onInput={mascarar(mascaraTelefone)} className="field" /></Campo>
-          <Campo label="LinkedIn (link do perfil)"><input name="linkedin" placeholder="https://linkedin.com/in/seu-perfil" defaultValue={p.linkedin ?? ''} className="field" /></Campo>
-          <Campo label="Pretensão salarial"><input name="pretensao" inputMode="numeric" placeholder="R$ 4.500" defaultValue={mascaraMoeda(p.pretensao ?? '')} onInput={mascarar(mascaraMoeda)} className="field" /></Campo>
+          <Campo label="Nome completo" exigido>
+            <input name="nome" autoComplete="name" defaultValue={p.nome} required className="field" />
+          </Campo>
+          <Campo label="E-mail" exigido>
+            <input name="email" type="email" autoComplete="email" defaultValue={p.email} required className="field" />
+          </Campo>
+          <Campo label="Celular com DDD" exigido>
+            <input
+              name="telefone"
+              type="tel"
+              autoComplete="tel"
+              inputMode="numeric"
+              defaultValue={mascaraTelefone(p.telefone)}
+              required
+              pattern={TELEFONE_PATTERN}
+              title="DDD e número, ex.: (11) 91234-5678"
+              onInput={mascarar(mascaraTelefone)}
+              className="field"
+            />
+          </Campo>
+          <Campo label="LinkedIn (link do perfil)" exigido ajuda="O InHire exige em praticamente toda vaga.">
+            <input name="linkedin" placeholder="https://linkedin.com/in/seu-perfil" defaultValue={p.linkedin ?? ''} required className="field" />
+          </Campo>
+          <Campo label="Pretensão salarial" exigido ajuda="Campo obrigatório na maioria das vagas do InHire.">
+            <input name="pretensao" inputMode="numeric" placeholder="R$ 4.500" defaultValue={mascaraMoeda(p.pretensao ?? '')} onInput={mascarar(mascaraMoeda)} required className="field" />
+          </Campo>
           <Campo label="Se a vaga aceitar CLT e PJ">
             <select name="regimePreferido" defaultValue={estado.automacao.regimePreferido} className="field">
               <option value="CLT">Prefiro CLT</option>
@@ -181,18 +261,97 @@ function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
               <option value="perguntar">Perguntar sempre</option>
             </select>
           </Campo>
-          <Campo label="Cargo desejado"><input name="cargo" defaultValue={p.cargo ?? ''} className="field" /></Campo>
-          <Campo label="Cidade / Estado"><input name="cidade" placeholder="Ex.: Campinas - SP" autoComplete="address-level2" defaultValue={p.cidade ?? ''} className="field" /></Campo>
+          <Campo label="Cargo desejado" exigido>
+            <input name="cargo" placeholder="Ex.: Desenvolvedor Full Stack" defaultValue={p.cargo ?? ''} required className="field" />
+          </Campo>
+          <Campo label="Cidade / Estado" exigido>
+            <input name="cidade" placeholder="Ex.: Campinas - SP" autoComplete="address-level2" defaultValue={p.cidade ?? ''} required className="field" />
+          </Campo>
         </div>
       </div>
 
+      <section aria-labelledby="perfil-profissional" className="flex flex-col gap-3 border-t border-panel-border pt-3.5">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <h3 id="perfil-profissional" className="text-sm font-bold">
+            Perfil profissional
+          </h3>
+          <p className="text-[11px] text-ink-soft">
+            é isto que decide a compatibilidade das vagas — o robô tenta deduzir do currículo, mas o que você definir aqui <strong>manda</strong>
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-3 max-md:grid-cols-1">
+          <Campo label="Sua senioridade" exigido ajuda="Vagas acima do seu nível perdem pontos; abaixo, também.">
+            <select name="senioridade" defaultValue={estado.automacao.senioridade} required className="field">
+              <option value="">— escolha —</option>
+              {NIVEIS.map(n => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </Campo>
+          <Campo label="Sua área" exigido ajuda="Vaga de outra área cai pela metade.">
+            <select name="area" defaultValue={estado.automacao.area} required className="field">
+              <option value="">— escolha —</option>
+              {AREAS.map(a => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+          </Campo>
+          <Campo label="Rigor na função" ajuda="Rígido mantém o mundo da tecnologia (dev, IA, QA, dados, segurança) e corta o resto.">
+            <select name="cargoRigido" defaultValue={estado.automacao.cargoRigido ? 'sim' : 'nao'} className="field">
+              <option value="nao">Equilibrado — aceita funções vizinhas</option>
+              <option value="sim">Rígido — só a minha área de atuação</option>
+            </select>
+          </Campo>
+        </div>
+        <label className="flex items-start gap-2.5 rounded-[7px] border border-panel-border p-3 hover:border-ink-soft has-checked:border-blue-dark has-checked:ring-1 has-checked:ring-blue-dark">
+          <input type="checkbox" name="presencialSoNaMinhaCidade" defaultChecked={estado.automacao.presencialSoNaMinhaCidade} className="mt-0.5 size-[17px] shrink-0" />
+          <span>
+            <span className="block text-xs font-bold">Fora da minha cidade, só vagas remotas</span>
+            <span className="block text-[11px] text-ink-soft">
+              Vaga presencial ou híbrida em outra cidade nem aparece na lista — não adianta ser compatível se você não pode comparecer. Na sua cidade
+              {p.cidade ? ` (${p.cidade})` : ''}, presencial e híbrida continuam valendo normalmente.
+            </span>
+          </span>
+        </label>
+        {perfilBusca && (
+          <p className="rounded-lg border border-panel-border bg-page-bg p-2.5 text-[11px] text-ink-soft">
+            Lido do seu currículo: <strong>{perfilBusca.senioridade}</strong> · {perfilBusca.area} · {perfilBusca.cargos[0] ?? 'cargo não identificado'}
+            {' — '}
+            {estado.automacao.senioridade || estado.automacao.area ? 'suas escolhas acima estão valendo no lugar.' : 'preencha acima para não depender da dedução.'}
+          </p>
+        )}
+      </section>
+
       <section aria-labelledby="dados-extra" className="flex flex-col gap-3 border-t border-panel-border pt-3.5">
-        <h3 id="dados-extra" className="text-sm font-bold">Dados complementares</h3>
+        <h3 id="dados-extra" className="text-sm font-bold">
+          Dados complementares
+        </h3>
         <div className="grid grid-cols-4 gap-3 max-lg:grid-cols-2 max-md:grid-cols-1">
-          <Campo label="GitHub"><input name="github" defaultValue={p.github ?? ''} className="field" /></Campo>
-          <Campo label="Portfólio"><input name="portfolio" autoComplete="url" defaultValue={p.portfolio ?? ''} className="field" /></Campo>
-          <Campo label="CPF"><input name="cpf" inputMode="numeric" placeholder="000.000.000-00" defaultValue={mascaraCPF(p.cpf ?? '')} pattern={CPF_PATTERN} title="CPF com 11 dígitos" onInput={mascarar(mascaraCPF)} className="field" /></Campo>
-          <Campo label="Data de nascimento"><input name="nascimento" type="date" autoComplete="bday" defaultValue={p.nascimento ?? ''} className="field" /></Campo>
+          <Campo label="GitHub">
+            <input name="github" defaultValue={p.github ?? ''} className="field" />
+          </Campo>
+          <Campo label="Portfólio">
+            <input name="portfolio" autoComplete="url" defaultValue={p.portfolio ?? ''} className="field" />
+          </Campo>
+          <Campo label="CPF">
+            <input
+              name="cpf"
+              inputMode="numeric"
+              placeholder="000.000.000-00"
+              defaultValue={mascaraCPF(p.cpf ?? '')}
+              pattern={CPF_PATTERN}
+              title="CPF com 11 dígitos"
+              onInput={mascarar(mascaraCPF)}
+              className="field"
+            />
+          </Campo>
+          <Campo label="Data de nascimento">
+            <input name="nascimento" type="date" autoComplete="bday" defaultValue={p.nascimento ?? ''} className="field" />
+          </Campo>
           <Campo label="Disponibilidade">
             <select name="disponibilidade" defaultValue={p.disponibilidade ?? ''} className="field">
               <option value="">Selecione</option>
@@ -203,9 +362,15 @@ function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
           </Campo>
         </div>
         <div className="grid grid-cols-3 gap-3 max-lg:grid-cols-1">
-          <Campo label="Escolaridade"><input name="escolaridade" defaultValue={p.escolaridade ?? ''} className="field" /></Campo>
-          <Campo label="Idiomas"><input name="idiomas" defaultValue={p.idiomas ?? ''} className="field" /></Campo>
-          <Campo label="Endereço"><input name="endereco" autoComplete="street-address" defaultValue={p.endereco ?? ''} className="field" /></Campo>
+          <Campo label="Escolaridade">
+            <input name="escolaridade" defaultValue={p.escolaridade ?? ''} className="field" />
+          </Campo>
+          <Campo label="Idiomas">
+            <input name="idiomas" defaultValue={p.idiomas ?? ''} className="field" />
+          </Campo>
+          <Campo label="Endereço">
+            <input name="endereco" autoComplete="street-address" defaultValue={p.endereco ?? ''} className="field" />
+          </Campo>
         </div>
       </section>
 
@@ -250,7 +415,14 @@ function AbaPerguntas({ onSalvar }: { onSalvar: (t: string) => void }) {
                   {q.pergunta}
                 </label>
               )}
-              <input id={idResposta} name={idResposta} aria-label={q.personalizada ? 'Resposta' : undefined} defaultValue={q.resposta} placeholder="Sua resposta" className="field min-w-[160px] flex-1" />
+              <input
+                id={idResposta}
+                name={idResposta}
+                aria-label={q.personalizada ? 'Resposta' : undefined}
+                defaultValue={q.resposta}
+                placeholder="Sua resposta"
+                className="field min-w-[160px] flex-1"
+              />
               <button
                 type="button"
                 aria-label={`Excluir pergunta: ${q.pergunta || 'pergunta personalizada'}`}
@@ -263,11 +435,7 @@ function AbaPerguntas({ onSalvar }: { onSalvar: (t: string) => void }) {
           );
         })}
       </ul>
-      <button
-        type="button"
-        className="btn btn-primary self-start"
-        onClick={() => setPerguntas(ps => [...ps, { id: Date.now(), icone: '', pergunta: '', resposta: '', personalizada: true }])}
-      >
+      <button type="button" className="btn btn-primary self-start" onClick={() => setPerguntas(ps => [...ps, { id: Date.now(), icone: '', pergunta: '', resposta: '', personalizada: true }])}>
         <Plus size={16} aria-hidden />
         Adicionar pergunta personalizada
       </button>
@@ -297,7 +465,7 @@ function AbaNotificacoes({ onSalvar }: { onSalvar: (t: string) => void }) {
                 <span className="block text-[13px] font-bold">{n.titulo}</span>
                 <span className="block text-[11px] text-ink-soft">{n.descricao}</span>
               </span>
-              <input type="checkbox" role="switch" name={n.id} defaultChecked={estado.notificacoes[n.id] ?? n.padrao} className="switch" />
+              <input type="checkbox" name={n.id} defaultChecked={estado.notificacoes[n.id] ?? n.padrao} className="switch" />
             </label>
           </li>
         ))}
@@ -322,8 +490,8 @@ function AbaPrivacidade() {
     <div className="flex flex-1 flex-col gap-4">
       <Cabecalho titulo="Dados e privacidade" sub="esta é uma instalação local do AutoCV" />
       <p className="max-w-[70ch] text-[13px] text-ink-soft">
-        Tudo fica neste computador, na pasta <code className="font-mono text-ink">%LOCALAPPDATA%\AutoCV</code>: seus dados, os PDFs, as vagas encontradas e o perfil do navegador que o robô usa.
-        Nada é enviado a servidor nenhum além das próprias páginas de vagas. O InHire não pede login, então nenhuma senha é guardada.
+        Tudo fica neste computador, na pasta <code className="font-mono text-ink">%LOCALAPPDATA%\AutoCV</code>: seus dados, os PDFs, as vagas encontradas e o perfil do navegador que o robô usa. Nada é
+        enviado a servidor nenhum além das próprias páginas de vagas. O InHire não pede login, então nenhuma senha é guardada.
       </p>
 
       <dl className="grid grid-cols-4 gap-3 max-lg:grid-cols-2">

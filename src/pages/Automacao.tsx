@@ -1,22 +1,67 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, CheckCircle2, ExternalLink, FileDown, FileText, Hourglass, ListOrdered, MessageCircleQuestion, Pause, Play, RefreshCw, Search, Send, SlidersHorizontal, Sparkles, Target, Terminal, X } from 'lucide-react';
+import {
+  CheckCircle2,
+  ExternalLink,
+  FileDown,
+  FileText,
+  Hourglass,
+  ListOrdered,
+  MessageCircleQuestion,
+  Pause,
+  Play,
+  RefreshCw,
+  Search,
+  Send,
+  SlidersHorizontal,
+  Sparkles,
+  Target,
+  Terminal,
+  X,
+} from 'lucide-react';
 import type { LinhaLog, Vaga } from '../types';
 import Panel from '../components/Panel';
+import VerMais from '../components/VerMais';
+import { BotaoSalvar } from '../components/BotaoSalvar';
 import Modal from '../components/Modal';
 import { statusRobo } from '../components/Sidebar';
 import { useEstado, type ConfigAutomacao } from '../estado';
 import { post, urlArquivo } from '../api';
-import { AREAS, MODELO, NIVEIS, PLATAFORMAS, REGIMES, REGIME_VAGA, STATUS_VAGA, formatarTamanho } from '../dados';
+import { MODELO, PLATAFORMAS, REGIMES, REGIME_VAGA, STATUS_VAGA, formatarTamanho, getPlataforma, perguntaSoDestaVaga } from '../dados';
 
-const SALARIO = { min: 1000, max: 15000, passo: 500 };
 const titulos = { ativo: 'Robô ligado', pausado: 'Robô parado', erro: 'Robô com erro' };
 const coresLog: Record<LinhaLog['tipo'], string> = { sucesso: 'text-aqua', info: 'text-white/85', aguardo: 'text-amber', erro: 'text-orange-light', alerta: 'text-amber' };
 
 const alternar = (lista: string[], v: string) => (lista.includes(v) ? lista.filter(x => x !== v) : [...lista, v]);
-const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
-const pct = (v: number) => (v - SALARIO.min) / (SALARIO.max - SALARIO.min);
 const cartao = 'rounded-[7px] border border-panel-border hover:border-ink-soft has-checked:border-blue-dark has-checked:ring-1 has-checked:ring-blue-dark';
+
+// Espera entre uma candidatura e a próxima. Abaixo de 1 min serve para testar e para fila curta; em envio
+// real, ritmo muito rápido é o que chama a atenção do antibot da plataforma.
+const INTERVALOS: [number, string][] = [
+  [10, 'A cada 10 segundos'],
+  [30, 'A cada 30 segundos'],
+  [60, 'A cada 1 minuto'],
+  [180, 'A cada 3 minutos'],
+  [600, 'A cada 10 minutos'],
+  [1800, 'A cada 30 minutos'],
+];
+
+const MODOS_PERGUNTA: { id: 'manual' | 'sem_piedade'; curto: string; titulo: string; texto: string; etiqueta?: string }[] = [
+  {
+    id: 'manual',
+    curto: 'Eu respondo',
+    titulo: 'Padrão — eu respondo as perguntas novas',
+    texto: 'Quando uma empresa faz uma pergunta que você ainda não respondeu, o robô pausa só aquela vaga e espera você digitar. A fila continua com as outras.',
+  },
+  {
+    id: 'sem_piedade',
+    curto: 'Sem Piedade',
+    titulo: 'Sem Piedade — a IA responde e não para',
+    etiqueta: 'envio 100% automático',
+    texto:
+      'A IA responde as perguntas das empresas com base no seu currículo, o mais curto possível e sem jeito de texto de robô. Nada é inventado: o que o currículo não sustenta vira resposta curta e neutra.',
+  },
+];
 
 export default function Automacao() {
   const { estado, salvar, registrar } = useEstado();
@@ -28,8 +73,10 @@ export default function Automacao() {
     if (JSON.stringify(estado.automacao) === JSON.stringify(base)) return;
     setBase(estado.automacao);
     if (!sujo) setCfg(estado.automacao);
-  }, [estado.automacao]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [estado.automacao, sujo, base]); // eslint-disable-line react-hooks/exhaustive-deps
   const [buscando, setBuscando] = useState(false);
+  const [salvoEm, setSalvoEm] = useState(0);
+  const [reavaliando, setReavaliando] = useState(false); // marca de tempo do ultimo salvamento, para o "Salvo!" do botao
   const [adaptacaoDe, setAdaptacaoDe] = useState<string | null>(null); // vaga cujo currículo adaptado está aberto
   const [mostrarIgnoradas, setMostrarIgnoradas] = useState(false);
   const set = (mudanca: Partial<ConfigAutomacao>) => setCfg(c => ({ ...c, ...mudanca }));
@@ -50,13 +97,36 @@ export default function Automacao() {
     await salvar({ automacao: nova });
     setBase(nova);
     setCfg(nova);
-    registrar('sucesso', `Configuração salva: modo ${cfg.modo === 'automatico' ? 'automático' : 'manual'}, ${cfg.adaptar ? 'com' : 'sem'} adaptação de currículo, ensaio ${cfg.ensaio ? 'ligado' : 'desligado'}.`);
+    setSalvoEm(Date.now()); // acende o "Salvo!" no botão — a frase da barra sozinha passava despercebida
+    registrar(
+      'sucesso',
+      `Configuração salva: modo ${cfg.modo === 'automatico' ? 'automático' : 'manual'}, ${cfg.adaptar ? 'com' : 'sem'} adaptação de currículo, ensaio ${cfg.ensaio ? 'ligado' : 'desligado'}.`,
+    );
     if (ligar && !ativo) await post('/robo', { ligar: true });
   }
   const aoEnviar = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     void guardar(false);
   };
+
+  async function reavaliar() {
+    setReavaliando(true);
+    try {
+      await post('/repontuar-ia', { limite: 60 });
+    } finally {
+      // O trabalho segue no núcleo; o log mostra o andamento e o resultado
+      setTimeout(() => setReavaliando(false), 4000);
+    }
+  }
+
+  /** Troca fora do formulário: grava na hora, senão o usuário mudaria e ligaria o robô com o modo antigo. */
+  async function trocarModoPerguntas(m: 'manual' | 'sem_piedade') {
+    if (m === estado.automacao.modoPerguntas) return;
+    set({ modoPerguntas: m });
+    setBase(b => ({ ...b, modoPerguntas: m }));
+    await salvar({ automacao: { ...estado.automacao, modoPerguntas: m } });
+    registrar('info', m === 'sem_piedade' ? 'Modo Sem Piedade: a IA passa a responder as perguntas das empresas.' : 'Modo padrão: perguntas novas pausam a vaga e esperam você.');
+  }
 
   async function buscar() {
     setBuscando(true);
@@ -86,6 +156,19 @@ export default function Automacao() {
             <Search size={16} aria-hidden />
             {estado.descoberta.varrendo ? 'Varrendo...' : 'Buscar vagas agora'}
           </button>
+          {/* O score por competências conta palavras; a IA lê o currículo e a vaga e separa função de função */}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={reavaliando || estado.ia.provedor === 'nenhum' || !estado.ia.chaveDefinida}
+            title={
+              estado.ia.provedor === 'nenhum' || !estado.ia.chaveDefinida ? 'Configure a IA em Configurações › Inteligência Artificial' : 'A IA lê o seu currículo e reavalia as vagas mais compatíveis'
+            }
+            onClick={reavaliar}
+          >
+            <Sparkles size={16} aria-hidden />
+            {reavaliando ? 'Reavaliando...' : 'Reavaliar com IA'}
+          </button>
           {ativo ? (
             <button type="button" className="btn btn-danger" onClick={() => post('/robo', { ligar: false })}>
               <Pause size={16} aria-hidden />
@@ -99,14 +182,48 @@ export default function Automacao() {
           )}
         </section>
 
+        {/* Antes de ligar: qual é a regra quando uma empresa faz uma pergunta que você nunca respondeu */}
+        <section aria-label="Perguntas das empresas" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-panel-border bg-panel px-3.5 py-2.5">
+          <MessageCircleQuestion size={16} aria-hidden className="shrink-0 text-ink-soft" />
+          <p className="text-xs font-bold">Quando a empresa fizer uma pergunta nova</p>
+          <div className="flex flex-wrap gap-1.5">
+            {MODOS_PERGUNTA.map(m => {
+              const escolhido = estado.automacao.modoPerguntas === m.id;
+              const bloqueado = m.id === 'sem_piedade' && (estado.ia.provedor === 'nenhum' || !estado.ia.chaveDefinida);
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  aria-pressed={escolhido}
+                  disabled={bloqueado}
+                  title={bloqueado ? 'Configure a IA em Configurações › Inteligência Artificial' : m.texto}
+                  onClick={() => trocarModoPerguntas(m.id)}
+                  className={`rounded-[9px] border px-2.5 py-1 text-[11px] font-bold ${
+                    escolhido ? 'border-blue-dark bg-blue-dark text-white' : 'border-panel-border bg-page-bg text-ink hover:border-ink-soft'
+                  } ${bloqueado ? 'cursor-not-allowed opacity-50' : ''}`}
+                >
+                  {m.curto}
+                </button>
+              );
+            })}
+          </div>
+          <p className="min-w-[220px] flex-1 text-[11px] text-ink-soft">{MODOS_PERGUNTA.find(m => m.id === estado.automacao.modoPerguntas)?.texto}</p>
+        </section>
+
         {estado.automacao.ensaio && ativo && (
           <p className="rounded-lg border border-amber bg-amber/15 p-3 text-xs text-amber-ink">
-            <strong>Modo ensaio ligado:</strong> o robô abre a vaga, preenche o formulário e anexa o currículo, mas não clica em enviar. Confira uma captura de tela na lista abaixo e, quando
-            estiver confiante, desligue o ensaio na configuração.
+            <strong>Modo ensaio ligado:</strong> o robô abre a vaga, preenche o formulário e anexa o currículo, mas não clica em enviar. Confira uma captura de tela na lista abaixo e, quando estiver
+            confiante, desligue o ensaio na configuração.
           </p>
         )}
 
-        <Panel icon={Target} title="Vagas encontradas" tone="purple" aside={encontradas.length ? `${encontradas.length} compatíveis${ignoradas ? ` · ${ignoradas} abaixo do mínimo` : ''}` : undefined} bodyClassName="p-0">
+        <Panel
+          icon={Target}
+          title="Vagas encontradas"
+          tone="purple"
+          aside={encontradas.length ? `${encontradas.length} compatíveis${ignoradas ? ` · ${ignoradas} abaixo do mínimo` : ''}` : undefined}
+          bodyClassName="p-0"
+        >
           {listadas.length === 0 ? (
             <p className="p-5 text-center text-xs text-ink-soft">
               {empresasAtivas
@@ -116,14 +233,28 @@ export default function Automacao() {
                 : 'Conecte o InHire e escolha as empresas em Plataformas para buscar vagas.'}
             </p>
           ) : (
-            <ul className="divide-y divide-panel-border">
-              {listadas.map(v => (
-                <VagaItem key={v.id} vaga={v} manual={estado.automacao.modo === 'manual'} pdfEnviado={estado.candidaturas.find(c => c.vagaId === v.id)?.curriculo} onVerAdaptacao={() => setAdaptacaoDe(v.id)} />
-              ))}
-            </ul>
+            <VerMais itens={listadas} nome="vagas">
+              {visiveis => (
+                <ul className="divide-y divide-panel-border">
+                  {visiveis.map(v => (
+                    <VagaItem
+                      key={v.id}
+                      vaga={v}
+                      manual={estado.automacao.modo === 'manual'}
+                      pdfEnviado={estado.candidaturas.find(c => c.vagaId === v.id)?.curriculo}
+                      onVerAdaptacao={() => setAdaptacaoDe(v.id)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </VerMais>
           )}
           {ignoradas > 0 && (
-            <button type="button" className="w-full border-t border-panel-border px-3.5 py-2 text-left text-[11px] font-bold text-ink-soft hover:bg-page-bg" onClick={() => setMostrarIgnoradas(m => !m)}>
+            <button
+              type="button"
+              className="w-full border-t border-panel-border px-3.5 py-2 text-left text-[11px] font-bold text-ink-soft hover:bg-page-bg"
+              onClick={() => setMostrarIgnoradas(m => !m)}
+            >
               {mostrarIgnoradas ? 'Ocultar' : 'Mostrar'} {ignoradas} vaga(s) abaixo de {estado.automacao.scoreMinimo}% de compatibilidade
             </button>
           )}
@@ -161,13 +292,13 @@ export default function Automacao() {
               ) : (
                 <div className="grid grid-cols-2 gap-2.5 max-lg:grid-cols-1">
                   {conectadas.map(p => (
-                    <label key={p.id} className={`flex items-center gap-2 px-2.5 py-2 ${cartao}`}>
-                      <input type="checkbox" checked={cfg.plataformas.includes(p.id)} onChange={() => set({ plataformas: alternar(cfg.plataformas, p.id) })} className="size-[17px] shrink-0" />
+                    <div key={p.id} className="flex items-center gap-2 rounded-[7px] border border-panel-border px-2.5 py-2">
+                      <span aria-hidden className={`size-2 shrink-0 rounded-full ${p.cor}`} />
                       <span>
                         <span className="block text-xs font-bold">{p.nome}</span>
                         <span className="block text-[10px] text-ink-soft">{empresasAtivas} empresa(s) monitoradas</span>
                       </span>
-                    </label>
+                    </div>
                   ))}
                 </div>
               )}
@@ -183,80 +314,42 @@ export default function Automacao() {
                   <FileText size={26} strokeWidth={1.25} aria-hidden className="shrink-0 text-ink-soft" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-bold">{estado.curriculos[0].nome}</span>
-                    <span className="block text-[11px] text-ink-soft">
-                      {formatarTamanho(estado.curriculos[0].tamanho)} · currículo principal (troque na tela Currículo)
-                    </span>
+                    <span className="block text-[11px] text-ink-soft">{formatarTamanho(estado.curriculos[0].tamanho)} · currículo principal (troque na tela Currículo)</span>
                   </span>
                 </div>
               )}
             </Passo>
 
             <Passo n={3} titulo="Filtros de vaga">
-              <div className="grid grid-cols-3 gap-2.5 max-lg:grid-cols-1">
-                <label>
-                  <span className="label">Área</span>
-                  <select value={cfg.area} onChange={e => set({ area: e.target.value })} className="field">
-                    <option value="">Qualquer (usa a do currículo)</option>
-                    {AREAS.map(a => (
-                      <option key={a}>{a}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span className="label">Cargo</span>
-                  <input value={cfg.cargo} onChange={e => set({ cargo: e.target.value })} placeholder="Ex.: Desenvolvedor(a) Back-end" className="field" />
-                </label>
-                <label>
-                  <span className="label">Senioridade</span>
-                  <select value={cfg.senioridade} onChange={e => set({ senioridade: e.target.value })} className="field">
-                    <option value="">Do currículo{estado.curriculos[0]?.perfilBusca ? ` (${estado.curriculos[0].perfilBusca.senioridade})` : ''}</option>
-                    {NIVEIS.map(n => (
-                      <option key={n}>{n}</option>
-                    ))}
-                  </select>
-                </label>
+              <div className="grid grid-cols-2 gap-2.5 max-lg:grid-cols-1">
                 <label>
                   <span className="label">Compatibilidade mínima (%)</span>
                   <input type="number" min={0} max={100} value={cfg.scoreMinimo} onChange={e => set({ scoreMinimo: +e.target.value })} className="field tabular-nums" />
                 </label>
-              </div>
-              <p className="mt-2 text-[11px] text-ink-soft">
-                Vagas presenciais são comparadas com a sua cidade{' '}
-                {estado.perfil?.cidade ? (
-                  <>({estado.perfil.cidade})</>
-                ) : (
-                  <>
-                    — <Link to="/configuracoes" className="text-blue-dark hover:underline">preencha Cidade / Estado em Configurações</Link>
-                  </>
-                )}
-                : outra cidade do mesmo estado perde 40%, outro estado perde 80%. Remotas e híbridas não mudam.
-              </p>
-              <div className="mt-3 flex flex-wrap items-end gap-3.5">
-                <div className="min-w-[260px] flex-1">
-                  <div className="mb-1.5 flex">
-                    <span className="label mb-0">Faixa salarial</span>
-                    <output className="ml-auto text-[11px] font-bold text-blue-dark tabular-nums">
-                      {brl(cfg.salarioMin)} — {brl(cfg.salarioMax)}
-                    </output>
-                  </div>
-                  <div className="dual-range">
-                    <div aria-hidden className="absolute inset-x-0 top-1/2 h-[9px] -translate-y-1/2 rounded-[5px] border border-panel-border bg-page-bg" />
-                    <div aria-hidden className="absolute top-1/2 h-[9px] -translate-y-1/2 rounded-[5px] bg-blue-dark" style={{ left: `calc(9px + (100% - 18px) * ${pct(cfg.salarioMin)})`, width: `calc((100% - 18px) * ${pct(cfg.salarioMax) - pct(cfg.salarioMin)})` }} />
-                    <input type="range" aria-label="Salário mínimo" aria-valuetext={brl(cfg.salarioMin)} min={SALARIO.min} max={SALARIO.max} step={SALARIO.passo} value={cfg.salarioMin} onChange={e => set({ salarioMin: Math.min(+e.target.value, cfg.salarioMax) })} />
-                    <input type="range" aria-label="Salário máximo" aria-valuetext={brl(cfg.salarioMax)} min={SALARIO.min} max={SALARIO.max} step={SALARIO.passo} value={cfg.salarioMax} onChange={e => set({ salarioMax: Math.max(+e.target.value, cfg.salarioMin) })} />
-                  </div>
-                </div>
                 <fieldset>
-                  <legend className="label">Modelo de trabalho</legend>
-                  <div className="flex">
-                    {REGIMES.map(([valor, rotulo]) => (
-                      <label key={valor} className="-ml-px border border-panel-border bg-panel px-3.5 py-[7px] text-xs font-bold first:ml-0 first:rounded-l-md last:rounded-r-md hover:bg-page-bg has-checked:relative has-checked:border-blue-dark has-checked:bg-blue-dark has-checked:text-white">
-                        <input type="checkbox" checked={cfg.regimes.includes(valor)} onChange={() => set({ regimes: alternar(cfg.regimes, valor) })} className="sr-only" />
+                  <legend className="label">Modelos de trabalho aceitos</legend>
+                  <div className="flex flex-wrap gap-2.5">
+                    {REGIMES.map(([id, rotulo]) => (
+                      <label key={id} className={`flex items-center gap-2 px-3 py-2 text-xs ${cartao}`}>
+                        <input type="checkbox" checked={cfg.regimes.includes(id)} onChange={() => set({ regimes: alternar(cfg.regimes, id) })} className="size-[17px] shrink-0" />
                         {rotulo}
                       </label>
                     ))}
                   </div>
                 </fieldset>
+              </div>
+              {/* Área, cargo, senioridade e rigor moram no perfil: um campo, um dono. Aqui só o espelho. */}
+              <div className="mt-3 rounded-[7px] border border-panel-border bg-page-bg p-2.5">
+                <p className="text-[11px] text-ink-soft">
+                  Quem você é decide a compatibilidade:{' '}
+                  <strong className="text-ink">{estado.automacao.senioridade || estado.curriculos[0]?.perfilBusca?.senioridade || 'senioridade não definida'}</strong> ·{' '}
+                  <strong className="text-ink">{estado.automacao.area || estado.curriculos[0]?.perfilBusca?.area || 'área não definida'}</strong> ·{' '}
+                  <strong className="text-ink">{estado.perfil?.cargo || 'cargo não definido'}</strong> · {estado.automacao.cargoRigido ? 'só a sua área de atuação' : 'aceita funções vizinhas'} ·{' '}
+                  {estado.automacao.presencialSoNaMinhaCidade ? `fora de ${estado.perfil?.cidade || 'sua cidade'}, só remotas` : 'aceita presencial em qualquer lugar'}.{' '}
+                  <Link to="/configuracoes?tab=dados" className="font-bold text-blue-dark hover:underline">
+                    Alterar em Configurações
+                  </Link>
+                </p>
               </div>
             </Passo>
 
@@ -267,7 +360,9 @@ export default function Automacao() {
                   <span>
                     <span className="block text-xs font-bold">Adaptar o currículo para cada vaga</span>
                     <span className="block text-[10px] text-ink-soft">
-                      {estado.ia.provedor !== 'nenhum' && estado.ia.chaveDefinida ? `Reescrita por ${estado.ia.provedor === 'gemini' ? 'Gemini' : 'Claude'} (${estado.ia.modelo}) + validação. ` : 'Só regras: reordena e destaca o que já está no currículo. '}
+                      {estado.ia.provedor !== 'nenhum' && estado.ia.chaveDefinida
+                        ? `Reescrita por ${estado.ia.provedor === 'gemini' ? 'Gemini' : 'Claude'} (${estado.ia.modelo}) + validação. `
+                        : 'Só regras: reordena e destaca o que já está no currículo. '}
                       Nunca inventa.{' '}
                       <Link to="/configuracoes?tab=ia" className="font-bold text-blue-dark underline">
                         Configurar IA
@@ -301,10 +396,10 @@ export default function Automacao() {
                 <div className="grid flex-1 grid-cols-3 gap-2.5 max-lg:grid-cols-1">
                   <label>
                     <span className="label">Intervalo entre candidaturas</span>
-                    <select value={cfg.intervalo} onChange={e => set({ intervalo: +e.target.value })} className="field">
-                      {[5, 10, 15, 30, 60].map(m => (
-                        <option key={m} value={m}>
-                          A cada {m} minutos
+                    <select value={cfg.intervaloSegundos} onChange={e => set({ intervaloSegundos: +e.target.value })} className="field">
+                      {INTERVALOS.map(([segundos, rotulo]) => (
+                        <option key={segundos} value={segundos}>
+                          {rotulo}
                         </option>
                       ))}
                     </select>
@@ -325,7 +420,38 @@ export default function Automacao() {
               </div>
             </Passo>
 
-            <Passo n={6} titulo="Segurança">
+            <Passo n={6} titulo="Perguntas das empresas">
+              <div className="flex flex-col gap-2">
+                {MODOS_PERGUNTA.map(m => {
+                  const escolhido = cfg.modoPerguntas === m.id;
+                  const bloqueado = m.id === 'sem_piedade' && (estado.ia.provedor === 'nenhum' || !estado.ia.chaveDefinida);
+                  return (
+                    <label
+                      key={m.id}
+                      className={`flex items-start gap-2.5 rounded-[7px] border p-3 ${escolhido ? 'border-blue-dark ring-1 ring-blue-dark' : 'border-panel-border hover:border-ink-soft'} ${bloqueado ? 'opacity-60' : ''}`}
+                    >
+                      <input type="radio" name="modoPerguntas" checked={escolhido} disabled={bloqueado} onChange={() => set({ modoPerguntas: m.id })} className="mt-0.5 size-[17px] shrink-0" />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span className="text-[13px] font-bold">{m.titulo}</span>
+                          {m.etiqueta && <span className="rounded-[9px] bg-orange-deep px-2 py-0.5 text-[10px] font-bold text-white">{m.etiqueta}</span>}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] text-ink-soft">{m.texto}</span>
+                        {bloqueado && <span className="mt-1 block text-[11px] font-bold text-amber-ink">Precisa de uma IA configurada em Configurações › Inteligência Artificial.</span>}
+                      </span>
+                    </label>
+                  );
+                })}
+                {cfg.modoPerguntas === 'sem_piedade' && (
+                  <p className="rounded-lg border border-amber bg-amber/15 p-2.5 text-[11px] text-amber-ink">
+                    A IA nunca responde autodeclaração (gênero, cor/raça, deficiência, religião, saúde) — isso continua vindo só da sua política em Configurações. Resposta longa, com jeito de texto de
+                    IA, ou opção que não existe na vaga é recusada e a vaga volta a esperar por você.
+                  </p>
+                )}
+              </div>
+            </Passo>
+
+            <Passo n={7} titulo="Segurança">
               <div className="grid grid-cols-2 gap-2.5 max-lg:grid-cols-1">
                 <label className={`flex items-center gap-2.5 px-3 py-2.5 ${cartao}`}>
                   <input type="checkbox" checked={cfg.ensaio} onChange={e => set({ ensaio: e.target.checked })} className="size-[17px] shrink-0" />
@@ -350,10 +476,9 @@ export default function Automacao() {
               <button type="button" className="btn btn-secondary" disabled={!sujo} onClick={() => setCfg(base)}>
                 Descartar
               </button>
-              <button type="submit" className="btn btn-success" disabled={!sujo}>
-                <Check size={16} aria-hidden />
+              <BotaoSalvar salvoEm={salvoEm} disabled={!sujo}>
                 Salvar configuração
-              </button>
+              </BotaoSalvar>
             </div>
           </form>
         </Panel>
@@ -362,26 +487,40 @@ export default function Automacao() {
       <div className="flex flex-col gap-4">
         <Panel icon={ListOrdered} title="Fila de envio" tone="green" aside={estado.fila.length > 0 ? `${estado.fila.length} vagas` : undefined} bodyClassName="flex flex-col">
           {estado.fila.length === 0 ? (
-            <p className="p-4 text-center text-xs text-ink-soft">{estado.automacao.modo === 'manual' ? 'Escolha vagas na lista ao lado com "Quero me candidatar".' : 'A fila enche sozinha quando o robô encontrar vagas compatíveis.'}</p>
+            <p className="p-4 text-center text-xs text-ink-soft">
+              {estado.automacao.modo === 'manual' ? 'Escolha vagas na lista ao lado com "Quero me candidatar".' : 'A fila enche sozinha quando o robô encontrar vagas compatíveis.'}
+            </p>
           ) : (
-            <ol className="flex-1 overflow-y-auto">
-              {estado.fila.map((v, i) => (
-                <li key={v.id} className="flex h-12 items-center gap-2 border-b border-panel-border px-2.5">
-                  <span className="w-6 text-[11px] font-bold text-ink-soft tabular-nums">{String(i + 1).padStart(2, '0')}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-bold">{v.titulo}</p>
-                    <p className="truncate text-[10px] text-ink-soft">{v.empresa}</p>
-                  </div>
-                  <span className={`rounded-[9px] px-2 py-0.5 text-[10px] font-bold ${STATUS_VAGA[v.status].classe}`}>{STATUS_VAGA[v.status].rotulo}</span>
-                  <button type="button" aria-label={`Tirar ${v.titulo} da fila`} disabled={v.status === 'em_andamento'} onClick={() => post('/fila/remover', { id: v.id })} className="btn btn-secondary size-[26px] p-0">
-                    <X size={13} aria-hidden />
-                  </button>
-                </li>
-              ))}
-            </ol>
+            <VerMais itens={estado.fila} nome="vagas">
+              {visiveis => (
+                <ol className="flex-1 overflow-y-auto">
+                  {visiveis.map((v, i) => (
+                    <li key={v.id} className="flex h-12 items-center gap-2 border-b border-panel-border px-2.5">
+                      <span className="w-6 text-[11px] font-bold text-ink-soft tabular-nums">{String(i + 1).padStart(2, '0')}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-bold">{v.titulo}</p>
+                        <p className="truncate text-[10px] text-ink-soft">{v.empresa}</p>
+                      </div>
+                      <span className={`rounded-[9px] px-2 py-0.5 text-[10px] font-bold ${STATUS_VAGA[v.status].classe}`}>{STATUS_VAGA[v.status].rotulo}</span>
+                      <button
+                        type="button"
+                        aria-label={`Tirar ${v.titulo} da fila`}
+                        disabled={v.status === 'em_andamento'}
+                        onClick={() => post('/fila/remover', { id: v.id })}
+                        className="btn btn-secondary size-[26px] p-0"
+                      >
+                        <X size={13} aria-hidden />
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </VerMais>
           )}
           {estado.proximoEnvioEm && ativo && (
-            <p className="border-t border-panel-border px-2.5 py-2 text-[11px] text-ink-soft tabular-nums">Próxima candidatura liberada às {new Date(estado.proximoEnvioEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+            <p className="border-t border-panel-border px-2.5 py-2 text-[11px] text-ink-soft tabular-nums">
+              Próxima candidatura liberada às {new Date(estado.proximoEnvioEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            </p>
           )}
         </Panel>
 
@@ -389,8 +528,9 @@ export default function Automacao() {
           {estado.log.length === 0 ? (
             <p className="p-4 text-center text-xs text-white/70">Nada registrado ainda.</p>
           ) : (
-            <ol aria-label="Eventos recentes" tabIndex={0} className="flex flex-1 flex-col gap-[3px] overflow-y-auto p-2.5">
+            <ol aria-label="Eventos recentes" className="flex flex-1 flex-col gap-[3px] overflow-y-auto p-2.5">
               {estado.log.map((l, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: LinhaLog nao tem id proprio; a lista so cresce no topo e nunca e reordenada
                 <li key={`${l.hora}-${i}`} className="flex gap-1.5 text-[11px]">
                   <span className="shrink-0 text-white/50 tabular-nums">[{l.hora}]</span>
                   <span className={coresLog[l.tipo]}>{l.msg}</span>
@@ -407,8 +547,18 @@ export default function Automacao() {
   );
 }
 
+/** Página de carreira de onde a vaga veio ("radix.inhire.app"); cai no nome da plataforma se a URL não der. */
+function origemDaVaga(v: Vaga): string {
+  try {
+    return new URL(v.url).host.replace(/^www\./, '');
+  } catch {
+    return v.tenant || getPlataforma(v.plataforma).nome;
+  }
+}
+
 function VagaItem({ vaga: v, manual, pdfEnviado, onVerAdaptacao }: { vaga: Vaga; manual: boolean; pdfEnviado?: string; onVerAdaptacao: () => void }) {
   const st = STATUS_VAGA[v.status];
+  const plataforma = getPlataforma(v.plataforma);
   const podeCandidatar = ['encontrada', 'erro', 'ensaio'].includes(v.status);
   return (
     <li className="flex flex-wrap items-center gap-3 px-3.5 py-3">
@@ -426,10 +576,14 @@ function VagaItem({ vaga: v, manual, pdfEnviado, onVerAdaptacao }: { vaga: Vaga;
             {v.status === 'enviada' && <CheckCircle2 size={12} aria-hidden />}
             {st.rotulo}
           </span>
+          {/* Origem: em qual plataforma o robô achou a vaga (e, no título, a página exata) */}
+          <span className={`inline-flex items-center gap-1 rounded-[9px] px-2 py-0.5 text-[10px] font-bold text-white ${plataforma.cor}`} title={`Encontrada em ${origemDaVaga(v)}`}>
+            {plataforma.nome}
+          </span>
         </p>
         <p className="text-[11px] text-ink-soft">
           {v.empresa} · {MODELO[v.modelo]} · {v.local || 'local não informado'} · {REGIME_VAGA[v.regime]}
-          {v.senioridade && v.senioridade !== 'Indefinida' && ` · ${v.senioridade}`}
+          {v.senioridade && v.senioridade !== 'Indefinida' && ` · ${v.senioridade}`} · via {origemDaVaga(v)}
         </p>
         {v.motivo && <p className="mt-0.5 text-[11px] text-ink">{v.motivo}</p>}
         {v.skills.length > 0 && <p className="mt-0.5 text-[11px] text-ink-soft">Pede: {v.skills.join(', ')}</p>}
@@ -572,8 +726,10 @@ function Adaptacao({ vaga, onFechar }: { vaga: Vaga; onFechar: () => void }) {
 
 function Pendencia({ vaga }: { vaga: Vaga }) {
   const p = vaga.pendencia!;
+  // Pergunta sobre esta empresa ("nossas produções") não deve nascer marcada para reaproveitar em outra vaga
+  const soDestaVaga = p.tipo === 'pergunta' && perguntaSoDestaVaga(p.pergunta.rotulo, vaga.empresa);
   const [resposta, setResposta] = useState('');
-  const [guardar, setGuardar] = useState(true);
+  const [guardar, setGuardar] = useState(!soDestaVaga);
 
   if (p.tipo === 'pergunta') {
     const q = p.pergunta;
@@ -599,8 +755,12 @@ function Pendencia({ vaga }: { vaga: Vaga }) {
         </p>
         {q.sensivel && (
           <p className="rounded-lg border border-amber bg-amber/15 p-2.5 text-[11px] text-amber-ink">
-            <strong>Pergunta de autodeclaração (dado sensível).</strong> O robô não responde isso sozinho nem reaproveita respostas parecidas: sua escolha vale só para esta pergunta exata. Você pode definir uma regra em{' '}
-            <Link to="/configuracoes?aba=sensiveis" className="font-bold underline">Configurações › Autodeclaração</Link>.
+            <strong>Pergunta de autodeclaração (dado sensível).</strong> O robô não responde isso sozinho nem reaproveita respostas parecidas: sua escolha vale só para esta pergunta exata. Você pode
+            definir uma regra em{' '}
+            <Link to="/configuracoes?aba=sensiveis" className="font-bold underline">
+              Configurações › Autodeclaração
+            </Link>
+            .
           </p>
         )}
         <p className="text-sm font-bold">{q.rotulo}</p>
@@ -628,11 +788,14 @@ function Pendencia({ vaga }: { vaga: Vaga }) {
             })}
           </div>
         ) : (
-          <textarea value={resposta} onChange={e => setResposta(e.target.value)} rows={3} placeholder="Sua resposta" className="field" autoFocus />
+          <textarea value={resposta} onChange={e => setResposta(e.target.value)} rows={3} placeholder="Sua resposta" className="field" />
         )}
-        <label className="flex items-center gap-2 text-xs">
-          <input type="checkbox" checked={guardar} onChange={e => setGuardar(e.target.checked)} className="size-4" />
-          {q.sensivel ? 'Guardar só para esta pergunta exata' : 'Guardar esta resposta para perguntas parecidas'}
+        <label className="flex items-start gap-2 text-xs">
+          <input type="checkbox" checked={guardar} onChange={e => setGuardar(e.target.checked)} className="mt-0.5 size-4 shrink-0" />
+          <span>
+            {q.sensivel ? 'Guardar só para esta pergunta exata' : 'Guardar esta resposta para perguntas parecidas'}
+            {soDestaVaga && !q.sensivel && <span className="block text-[11px] text-ink-soft">Esta pergunta é sobre {vaga.empresa} — reaproveitar a resposta em outra empresa não faria sentido.</span>}
+          </span>
         </label>
       </Modal>
     );

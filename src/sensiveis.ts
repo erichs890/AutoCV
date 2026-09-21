@@ -9,16 +9,66 @@ export interface CategoriaSensivel {
   rotulo: string;
   exemplo: string; // como a pergunta costuma aparecer
   termos: string[]; // sem acento, minúsculas; casados por palavra inteira
+  /**
+   * Respostas como as vagas realmente escrevem (levantadas nos formulários do InHire em 20/09/2026).
+   * Existem para você escolher numa lista em vez de adivinhar o texto exato: o casamento com a opção da
+   * vaga é por similaridade, então "Mulher Cisgênero" acha "Mulher cisgênero" e "Mulher cis".
+   */
+  opcoesComuns: string[];
 }
 
+export const PREFIRO_NAO_RESPONDER = 'Prefiro não responder';
+
 export const CATEGORIAS_SENSIVEIS: CategoriaSensivel[] = [
-  { id: 'genero', rotulo: 'Identidade de gênero', exemplo: 'Qual é a sua identidade de gênero?', termos: ['identidade de genero', 'genero', 'transgenero', 'cisgenero'] },
-  { id: 'orientacao', rotulo: 'Orientação sexual', exemplo: 'Qual é a sua orientação sexual?', termos: ['orientacao sexual', 'sexualidade'] },
-  { id: 'raca', rotulo: 'Cor, raça ou etnia', exemplo: 'Qual é a sua cor ou raça?', termos: ['cor ou raca', 'raca', 'etnia', 'etnico', 'racial', 'sua cor', 'cor/raca', 'pessoa preta', 'pessoa parda', 'indigena'] },
-  { id: 'pcd', rotulo: 'Pessoa com deficiência (PcD)', exemplo: 'Deseja se candidatar como pessoa com deficiência?', termos: ['pessoa com deficiencia', 'pessoas com deficiencia', 'pcd', 'deficiencia', 'laudo medico', 'cid'] },
-  { id: 'religiao', rotulo: 'Religião ou crença', exemplo: 'Qual é a sua religião?', termos: ['religiao', 'religiosa', 'religioso', 'crenca'] },
-  { id: 'saude', rotulo: 'Saúde, gestação e vida familiar', exemplo: 'Possui alguma condição de saúde?', termos: ['condicao de saude', 'doenca', 'gestante', 'gravida', 'gravidez', 'estado civil', 'possui filhos', 'tem filhos'] },
-  { id: 'grupos', rotulo: 'Grupos de diversidade', exemplo: 'Você pertence a um dos grupos abaixo?', termos: ['grupos abaixo', 'grupo de diversidade', 'grupos de diversidade', 'grupos minorizados', 'grupo minorizado', 'diversidade', 'lgbt', 'lgbtqia'] },
+  {
+    id: 'genero',
+    rotulo: 'Identidade de gênero',
+    exemplo: 'Qual é a sua identidade de gênero?',
+    termos: ['identidade de genero', 'genero', 'transgenero', 'cisgenero'],
+    opcoesComuns: ['Mulher Cisgênero', 'Homem Cisgênero', 'Mulher Transgênero', 'Homem Transgênero', 'Não-binário', 'Agênero', 'Outro', PREFIRO_NAO_RESPONDER],
+  },
+  {
+    id: 'orientacao',
+    rotulo: 'Orientação sexual',
+    exemplo: 'Qual é a sua orientação sexual?',
+    termos: ['orientacao sexual', 'sexualidade'],
+    opcoesComuns: ['Heterossexual', 'Homossexual', 'Bissexual', 'Pansexual', 'Assexual', 'Outra', PREFIRO_NAO_RESPONDER],
+  },
+  {
+    id: 'raca',
+    rotulo: 'Cor, raça ou etnia',
+    exemplo: 'Qual é a sua cor ou raça?',
+    termos: ['cor ou raca', 'raca', 'etnia', 'etnico', 'racial', 'sua cor', 'cor/raca', 'pessoa preta', 'pessoa parda', 'indigena'],
+    opcoesComuns: ['Branca', 'Preta', 'Parda', 'Amarela', 'Indígena', PREFIRO_NAO_RESPONDER],
+  },
+  {
+    id: 'pcd',
+    rotulo: 'Pessoa com deficiência (PcD)',
+    exemplo: 'Deseja se candidatar como pessoa com deficiência?',
+    termos: ['pessoa com deficiencia', 'pessoas com deficiencia', 'pcd', 'deficiencia', 'laudo medico', 'cid'],
+    opcoesComuns: ['Não', 'Sim', PREFIRO_NAO_RESPONDER],
+  },
+  {
+    id: 'religiao',
+    rotulo: 'Religião ou crença',
+    exemplo: 'Qual é a sua religião?',
+    termos: ['religiao', 'religiosa', 'religioso', 'crenca'],
+    opcoesComuns: ['Católica', 'Evangélica', 'Espírita', 'Umbanda ou Candomblé', 'Judaica', 'Islâmica', 'Sem religião', 'Outra', PREFIRO_NAO_RESPONDER],
+  },
+  {
+    id: 'saude',
+    rotulo: 'Saúde, gestação e vida familiar',
+    exemplo: 'Possui alguma condição de saúde?',
+    termos: ['condicao de saude', 'doenca', 'gestante', 'gravida', 'gravidez', 'estado civil', 'possui filhos', 'tem filhos'],
+    opcoesComuns: ['Não', 'Sim', PREFIRO_NAO_RESPONDER],
+  },
+  {
+    id: 'grupos',
+    rotulo: 'Grupos de diversidade',
+    exemplo: 'Você pertence a um dos grupos abaixo?',
+    termos: ['grupos abaixo', 'grupo de diversidade', 'grupos de diversidade', 'grupos minorizados', 'grupo minorizado', 'diversidade', 'lgbt', 'lgbtqia'],
+    opcoesComuns: ['Nenhuma das opções', 'Mulher', 'Pessoa preta', 'Pessoa parda', 'Indígena', 'LGBTQIA+', 'Pessoa com deficiência', '50+', PREFIRO_NAO_RESPONDER],
+  },
 ];
 
 export const normalizarSensivel = (s: string) =>
@@ -55,7 +105,12 @@ export const SENSIVEIS_PADRAO: ConfigSensiveis = { modo: 'perguntar', padroes: {
  *  4. null → pausar e perguntar ao usuário, sinalizando que é autodeclaração.
  * `casar` aproxima a resposta às opções da vaga (ou devolve o texto quando a pergunta é livre).
  */
-export function decidirSensivel(pergunta: { rotulo: string; opcoes?: string[]; obrigatoria?: boolean }, salvas: { pergunta: string; resposta: string }[], cfg: ConfigSensiveis, casar: (resposta: string) => string | null): string | null {
+export function decidirSensivel(
+  pergunta: { rotulo: string; opcoes?: string[]; obrigatoria?: boolean },
+  salvas: { pergunta: string; resposta: string }[],
+  cfg: ConfigSensiveis,
+  casar: (resposta: string) => string | null,
+): string | null {
   const cat = categoriaSensivel(pergunta.rotulo);
   if (!cat) return null;
   const alvo = normalizarSensivel(pergunta.rotulo);

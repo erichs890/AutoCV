@@ -9,7 +9,7 @@ import { DIRS } from './config.ts';
 import { adaptarComIA, adaptarCurriculo, validarAdaptacao } from './resume/adapter.ts';
 import { completar, iaAtiva, lerIA } from './ia.ts';
 import { markdownParaPdf } from './resume/mdToPdf.ts';
-import { similaridade } from './resume/texto.ts';
+import { normalizar, similaridade } from './resume/texto.ts';
 import { categoriaSensivel, decidirSensivel } from '../src/sensiveis.ts';
 
 const registrar = log.registrar;
@@ -24,7 +24,10 @@ function casarComOpcoes(pergunta: PerguntaExtra, resposta: string): string | nul
   if ((pergunta.tipo === 'opcoes' || pergunta.tipo === 'multipla') && pergunta.opcoes?.length) {
     const casar = (r: string) => pergunta.opcoes!.find(o => similaridade(o, r) >= 0.7) ?? null;
     if (pergunta.tipo === 'opcoes') return casar(resposta);
-    const casadas = resposta.split(/\s*\|\s*|\s*;\s*/).map(casar).filter((o): o is string => o !== null);
+    const casadas = resposta
+      .split(/\s*\|\s*|\s*;\s*/)
+      .map(casar)
+      .filter((o): o is string => o !== null);
     return casadas.length ? [...new Set(casadas)].join(' | ') : null;
   }
   return resposta;
@@ -60,8 +63,17 @@ function pendente(vaga: Vaga, pendencia: Pendencia) {
   if (pendencia.tipo === 'pergunta' && sensivel) pendencia = { ...pendencia, pergunta: { ...pendencia.pergunta, sensivel: sensivel.id } };
   vagas.atualizar(vaga.id, { status, pendencia });
   const rotulo = pendencia.tipo === 'pergunta' ? pendencia.pergunta.rotulo : '';
-  registrar('aguardo', pendencia.tipo === 'pergunta' ? `"${vaga.titulo}" aguarda sua resposta${sensivel ? ` (autodeclaração — ${sensivel.rotulo.toLowerCase()}, dado sensível)` : ''}: ${rotulo}` : `"${vaga.titulo}" aguarda sua aprovação do currículo adaptado.`);
-  emitir({ tipo: 'aviso', nivel: 'info', msg: pendencia.tipo === 'pergunta' ? `${sensivel ? 'Autodeclaração pedida pelo InHire' : 'O InHire perguntou'}: ${rotulo}` : `Currículo adaptado pronto para revisão: ${vaga.titulo}` });
+  registrar(
+    'aguardo',
+    pendencia.tipo === 'pergunta'
+      ? `"${vaga.titulo}" aguarda sua resposta${sensivel ? ` (autodeclaração — ${sensivel.rotulo.toLowerCase()}, dado sensível)` : ''}: ${rotulo}`
+      : `"${vaga.titulo}" aguarda sua aprovação do currículo adaptado.`,
+  );
+  emitir({
+    tipo: 'aviso',
+    nivel: 'info',
+    msg: pendencia.tipo === 'pergunta' ? `${sensivel ? 'Autodeclaração pedida pelo InHire' : 'O InHire perguntou'}: ${rotulo}` : `Currículo adaptado pronto para revisão: ${vaga.titulo}`,
+  });
 }
 
 /** IA (se configurada) com validação de entidades; qualquer problema → cai para a adaptação por regras. Guarda o resultado na vaga. */
@@ -92,9 +104,45 @@ async function gerarAdaptacaoBruta(original: string, vaga: Vaga): Promise<{ mark
  * Fluxo completo de uma candidatura. Ordem obrigatória: preencher → anexar → enviar → só então confirmar.
  * Pausa (sem travar as outras) quando falta resposta de pergunta ou aprovação de preview.
  */
+/**
+ * Identidade prática de uma vaga: empresa + título.
+ *
+ * O InHire publica a mesma função mais de uma vez, com `jobId` diferente — a Radix apareceu duas vezes com
+ * "Profissional Desenvolvedor de Software Pleno" e a BIX duas com o mesmo banco de talentos. Para o recrutador
+ * são a mesma coisa, e receber dois ou três currículos iguais do mesmo candidato pega muito mal.
+ * Travar só por `id` não resolvia isso.
+ */
+export const chaveDaVaga = (v: { empresa: string; titulo: string }) => `${normalizar(v.empresa)}|${normalizar(v.titulo)}`;
+
+/** Já existe candidatura ENVIADA para esta vaga? (ensaio não conta: é justamente o passo antes do envio real) */
+export const jaEnviada = (vagaId: string) => candidaturas.listar().some(c => c.vagaId === vagaId && c.resultado === 'enviada');
+
+/** Já se candidatou a esta vaga OU a outra com o mesmo título na mesma empresa. */
+export function jaCandidatado(vaga: { id: string; empresa: string; titulo: string }): boolean {
+  const chave = chaveDaVaga(vaga);
+  return candidaturas.listar().some(c => c.resultado === 'enviada' && (c.vagaId === vaga.id || chaveDaVaga(c) === chave));
+}
+
 export async function executarCandidatura(id: string) {
   const vaga = vagas.get(id);
   if (!vaga) return;
+
+  // Trava dura contra candidatura repetida: mandar o currículo duas vezes para a mesma vaga queima o candidato
+  // com o recrutador. Vale para qualquer caminho — fila automática, clique manual, retomada de pendência.
+  if (jaCandidatado(vaga)) {
+    // A própria vaga volta a "enviada"; a publicação irmã é encerrada, para não reaparecer na fila
+    const mesmaVaga = jaEnviada(id);
+    vagas.atualizar(id, { status: mesmaVaga ? 'enviada' : 'encerrada', pendencia: undefined, posicao: undefined, erro: undefined });
+    registrar(
+      'alerta',
+      mesmaVaga
+        ? `"${vaga.titulo}" já tinha sido enviada para ${vaga.empresa}; não vou candidatar de novo.`
+        : `Você já se candidatou a "${vaga.titulo}" em ${vaga.empresa} (outra publicação da mesma vaga); não vou mandar o currículo duas vezes.`,
+    );
+    emitir({ tipo: 'estado' });
+    return;
+  }
+
   const perfil = ler.perfil();
   const cfg = ler.automacao();
   const adapter = adapters[vaga.plataforma];
@@ -125,7 +173,10 @@ export async function executarCandidatura(id: string) {
 
   const regime = decidirRegime(vaga);
   if (regime === 'perguntar') {
-    pendente(vaga, { tipo: 'pergunta', pergunta: { rotulo: `${PERGUNTA_REGIME} para "${vaga.titulo}" (a vaga ${vaga.regime === 'ambos' ? 'aceita CLT e PJ' : 'não informou o regime'})`, tipo: 'opcoes', opcoes: ['CLT', 'PJ'] } });
+    pendente(vaga, {
+      tipo: 'pergunta',
+      pergunta: { rotulo: `${PERGUNTA_REGIME} para "${vaga.titulo}" (a vaga ${vaga.regime === 'ambos' ? 'aceita CLT e PJ' : 'não informou o regime'})`, tipo: 'opcoes', opcoes: ['CLT', 'PJ'] },
+    });
     return;
   }
 
@@ -211,5 +262,5 @@ export async function executarCandidatura(id: string) {
     registrar('sucesso', `Candidatura confirmada: "${vaga.titulo}" em ${vaga.empresa} — currículo ${versao}, regime ${regime ?? 'não pedido'}.`);
     emitir({ tipo: 'aviso', nivel: 'sucesso', msg: `Candidatura enviada: ${vaga.titulo} (${vaga.empresa})` });
   }
-  kv.set('proximoEnvioEm', new Date(Date.now() + cfg.intervalo * 60000).toISOString());
+  kv.set('proximoEnvioEm', new Date(Date.now() + cfg.intervaloSegundos * 1000).toISOString());
 }

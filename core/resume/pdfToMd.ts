@@ -3,7 +3,38 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { normalizar } from './texto.ts';
 
 // Títulos de seção que costumam aparecer em currículos (PT/EN)
-const SECOES = ['resumo', 'objetivo', 'perfil', 'sobre', 'experiencia', 'experiencias', 'experiencia profissional', 'historico profissional', 'formacao', 'formacao academica', 'educacao', 'habilidades', 'competencias', 'skills', 'conhecimentos', 'tecnologias', 'idiomas', 'cursos', 'certificacoes', 'certificados', 'projetos', 'contato', 'dados pessoais', 'informacoes pessoais', 'summary', 'experience', 'education', 'languages', 'projects', 'certifications'];
+const SECOES = [
+  'resumo',
+  'objetivo',
+  'perfil',
+  'sobre',
+  'experiencia',
+  'experiencias',
+  'experiencia profissional',
+  'historico profissional',
+  'formacao',
+  'formacao academica',
+  'educacao',
+  'habilidades',
+  'competencias',
+  'skills',
+  'conhecimentos',
+  'tecnologias',
+  'idiomas',
+  'cursos',
+  'certificacoes',
+  'certificados',
+  'projetos',
+  'contato',
+  'dados pessoais',
+  'informacoes pessoais',
+  'summary',
+  'experience',
+  'education',
+  'languages',
+  'projects',
+  'certifications',
+];
 
 interface Linha {
   y: number;
@@ -13,8 +44,10 @@ interface Linha {
 }
 
 function ehTituloDeSecao(texto: string) {
-  const n = normalizar(texto).replace(/[:\s]+$/, '').trim();
-  return n.length <= 40 && SECOES.some(s => n === s || n.startsWith(s + ' ') || n.endsWith(' ' + s));
+  const n = normalizar(texto)
+    .replace(/[:\s]+$/, '')
+    .trim();
+  return n.length <= 40 && SECOES.some(s => n === s || n.startsWith(`${s} `) || n.endsWith(` ${s}`));
 }
 
 /** Extrai o texto do PDF e reconstrói um Markdown simples (títulos, listas, parágrafos). */

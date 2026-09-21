@@ -43,7 +43,7 @@ O AutoCV **nunca inventa, exagera ou remove** informação. Sem IA, a adaptaçã
 
 ### Com IA (opcional)
 
-Em **Configurações › Inteligência Artificial** escolha o provedor — **Google Gemini** (padrão `gemini-2.5-flash`) ou **Anthropic Claude** (padrão `claude-opus-5`) —, o modelo e cole a chave. "Testar conexão" faz uma chamada mínima. A IA pode reescrever frases com termos da vaga quando sua experiência já sustenta, mas o texto passa por uma validação de entidades: competência, número, sigla ou nome que não esteja no original, seção ou experiência removida, ou tamanho muito diferente fazem a reescrita ser descartada e a adaptação por regras entrar no lugar. A chave fica só neste computador.
+Em **Configurações › Inteligência Artificial** escolha o provedor — **Google Gemini** (padrão `gemini-3.8-flash`) ou **Anthropic Claude** (padrão `claude-opus-5`) —, o modelo e cole a chave. "Testar conexão" faz uma chamada mínima. A IA pode reescrever frases com termos da vaga quando sua experiência já sustenta, mas o texto passa por uma validação de entidades: competência, número, sigla ou nome que não esteja no original, seção ou experiência removida, ou tamanho muito diferente fazem a reescrita ser descartada e a adaptação por regras entrar no lugar. A chave fica só neste computador.
 
 ## Onde ficam os dados
 

@@ -23,7 +23,9 @@ db.exec(`
 // Estrutura de formulário descoberta por vaga (cache/diagnóstico; a descoberta em tempo real continua mandando)
 export const formularios = {
   salvar(vagaId: string, estrutura: unknown) {
-    db.prepare('insert into formularios (vaga_id, estrutura, atualizada_em) values (?, ?, ?) on conflict(vaga_id) do update set estrutura = excluded.estrutura, atualizada_em = excluded.atualizada_em').run(vagaId, JSON.stringify(estrutura), new Date().toISOString());
+    db.prepare(
+      'insert into formularios (vaga_id, estrutura, atualizada_em) values (?, ?, ?) on conflict(vaga_id) do update set estrutura = excluded.estrutura, atualizada_em = excluded.atualizada_em',
+    ).run(vagaId, JSON.stringify(estrutura), new Date().toISOString());
   },
   get<T>(vagaId: string): T | undefined {
     const l = db.prepare('select estrutura from formularios where vaga_id = ?').get(vagaId) as { estrutura: string } | undefined;
@@ -138,7 +140,14 @@ export const empresas = {
     const atual = empresas.get(subdominio);
     if (!atual) return;
     const n = { ...atual, ...p };
-    db.prepare('update empresas_inhire set nome = ?, ativo = ?, ultima_verificacao = ?, total_vagas = ?, falhas = ? where subdominio = ?').run(n.nome, n.ativo ? 1 : 0, n.ultimaVerificacao, n.totalVagas, n.falhas, subdominio);
+    db.prepare('update empresas_inhire set nome = ?, ativo = ?, ultima_verificacao = ?, total_vagas = ?, falhas = ? where subdominio = ?').run(
+      n.nome,
+      n.ativo ? 1 : 0,
+      n.ultimaVerificacao,
+      n.totalVagas,
+      n.falhas,
+      subdominio,
+    );
   },
   remover(subdominio: string) {
     db.prepare('delete from empresas_inhire where subdominio = ?').run(subdominio);

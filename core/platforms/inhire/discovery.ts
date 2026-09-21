@@ -40,7 +40,17 @@ let varrendo = false;
 let progresso: ConfigDescoberta['progresso'] = null;
 export const descobertaParaFront = (): ConfigDescoberta => {
   const d = lerDescoberta();
-  return { intervaloHoras: d.intervaloHoras, fonteB: d.fonteB, googleCx: d.googleCx, googleKeyDefinida: d.googleKey.length > 0, ultimaVarredura: d.ultimaVarredura, ultimaFonteB: d.ultimaFonteB, varrendo, descobrindo, progresso };
+  return {
+    intervaloHoras: d.intervaloHoras,
+    fonteB: d.fonteB,
+    googleCx: d.googleCx,
+    googleKeyDefinida: d.googleKey.length > 0,
+    ultimaVarredura: d.ultimaVarredura,
+    ultimaFonteB: d.ultimaFonteB,
+    varrendo,
+    descobrindo,
+    progresso,
+  };
 };
 
 // Poucas requisições em paralelo por empresa: rápido o bastante sem parecer tráfego abusivo
@@ -158,13 +168,18 @@ export async function varrer(perfil: PerfilBusca, filtros: FiltrosScore & { scor
   try {
     const lista = empresas.listar().filter(e => e.ativo);
     log('info', `Varredura iniciada: ${lista.length} empresa(s) do InHire.`);
-    const conhecidas = new Map(vagas.listar().filter(v => v.plataforma === 'inhire').map(v => [v.id, v]));
+    const conhecidas = new Map(
+      vagas
+        .listar()
+        .filter(v => v.plataforma === 'inhire')
+        .map(v => [v.id, v]),
+    );
 
     for (const [i, e] of lista.entries()) {
       progresso = { atual: i + 1, total: lista.length, empresa: e.nome || e.subdominio };
       if (i % 5 === 0) emitir({ tipo: 'estado' });
       if (i > 0) await dormir(PAUSA_ENTRE_EMPRESAS_MS);
-      let resultado;
+      let resultado: Awaited<ReturnType<typeof listarVagas>>;
       try {
         resultado = await listarVagas(e.subdominio);
       } catch (err) {
@@ -197,7 +212,8 @@ export async function varrer(perfil: PerfilBusca, filtros: FiltrosScore & { scor
         }
       }
       empresas.atualizar(e.subdominio, { nome: resultado.tenantName || e.nome, totalVagas: resultado.vagas.length, falhas: 0, ultimaVerificacao: new Date().toISOString() });
-      if (novasAqui || encerradas) log('info', `${resultado.tenantName || e.subdominio}: ${resultado.vagas.length} vagas publicadas, ${novasAqui} nova(s)${encerradas ? `, ${encerradas} encerrada(s)` : ''}.`);
+      if (novasAqui || encerradas)
+        log('info', `${resultado.tenantName || e.subdominio}: ${resultado.vagas.length} vagas publicadas, ${novasAqui} nova(s)${encerradas ? `, ${encerradas} encerrada(s)` : ''}.`);
     }
     salvarDescoberta({ ultimaVarredura: new Date().toISOString() });
     log('sucesso', `Varredura concluída: ${novas.length} vaga(s) nova(s) em ${lista.length} empresa(s).`);
@@ -249,7 +265,11 @@ async function candidatosGoogle(perfil: PerfilBusca | undefined): Promise<Set<st
   const d = lerDescoberta();
   const achados = new Set<string>();
   if (!d.googleKey || !d.googleCx) return achados;
-  const consultas = ['site:inhire.app vagas', 'site:inhire.app "candidatar"', ...(perfil ? [`site:inhire.app vagas ${perfil.area}`, ...perfil.cargos.slice(0, 2).map(c => `site:inhire.app ${c}`)] : [])];
+  const consultas = [
+    'site:inhire.app vagas',
+    'site:inhire.app "candidatar"',
+    ...(perfil ? [`site:inhire.app vagas ${perfil.area}`, ...perfil.cargos.slice(0, 2).map(c => `site:inhire.app ${c}`)] : []),
+  ];
   for (const q of consultas) {
     for (const start of [1, 11]) {
       const url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(d.googleKey)}&cx=${encodeURIComponent(d.googleCx)}&q=${encodeURIComponent(q)}&start=${start}&num=10`;
@@ -272,7 +292,7 @@ export async function descobrirEmpresas(perfil: PerfilBusca | undefined, log: Lo
   if (descobrindo) throw new Error('já existe uma descoberta em andamento');
   descobrindo = true;
   try {
-    log('info', 'Procurando empresas que usam o InHire (Common Crawl' + (lerDescoberta().googleKey ? ' + Google' : '') + ')...');
+    log('info', `Procurando empresas que usam o InHire (Common Crawl${lerDescoberta().googleKey ? ' + Google' : ''})...`);
     const candidatos = new Set<string>();
     for (const s of await candidatosCommonCrawl(log)) candidatos.add(s);
     try {

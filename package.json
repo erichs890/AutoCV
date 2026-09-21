@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "vite",
     "core": "node --disable-warning=ExperimentalWarning core/server.ts",
-    "check": "node --disable-warning=ExperimentalWarning core/self-check.ts",
-    "build": "tsc --noEmit && tsc -p core && vite build",
-    "preview": "vite preview"
+    "check": "node --disable-warning=ExperimentalWarning core/self-check.ts && node --disable-warning=ExperimentalWarning core/fila-check.ts && node --disable-warning=ExperimentalWarning core/envio-check.ts",
+    "build": "biome check . && tsc --noEmit && tsc -p core && vite build",
+    "preview": "vite preview",
+    "lint": "biome check .",
+    "lint:fix": "biome check . --write",
+    "format": "biome format . --write"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
@@ -20,6 +23,7 @@
     "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.1",
     "@types/react": "^18.3.31",

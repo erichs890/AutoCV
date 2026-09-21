@@ -1,39 +1,39 @@
-@import "tailwindcss" source(".");
+@import 'tailwindcss' source(".");
 
 @theme {
-  --font-ui: "PT Sans", system-ui, sans-serif;
+  --font-ui: 'PT Sans', system-ui, sans-serif;
   --breakpoint-md: 56.25rem; /* 900px — abaixo disso, layout mobile */
 
   /* Superfícies */
-  --color-page-bg: #EAEAEA;
-  --color-panel: #FFFFFF;
-  --color-panel-border: #C3C9D1;
+  --color-page-bg: #eaeaea;
+  --color-panel: #ffffff;
+  --color-panel-border: #c3c9d1;
 
   /* Texto */
   --color-ink: #333333;
-  --color-ink-soft: #6B7480;
+  --color-ink-soft: #6b7480;
 
   /* Marca / ações */
-  --color-blue: #2F7FD1;
-  --color-blue-dark: #1A6DC4;
-  --color-blue-deep: #0F4C8F;
+  --color-blue: #2f7fd1;
+  --color-blue-dark: #1a6dc4;
+  --color-blue-deep: #0f4c8f;
 
   /* Semântica */
-  --color-aqua: #6EC648;
-  --color-green-dark: #4A9B2C;
-  --color-orange: #E8622C;
-  --color-purple: #8B5FBF;
+  --color-aqua: #6ec648;
+  --color-green-dark: #4a9b2c;
+  --color-orange: #e8622c;
+  --color-purple: #8b5fbf;
 
   /* Sidebar */
-  --color-side-top: #3D4756;
-  --color-side-bottom: #232A34;
+  --color-side-top: #3d4756;
+  --color-side-bottom: #232a34;
 
   /* Extraídos do HTML do design: tons para texto pequeno passar AA sobre branco / fundo escuro */
-  --color-green-deep: #3E8524;
-  --color-orange-deep: #C8481A; /* design usa #D24E1B (4,4:1); um tom abaixo para 4,5:1 */
-  --color-orange-light: #FF8B5E;
-  --color-amber: #E8C86A;
-  --color-amber-ink: #7A6320;
+  --color-green-deep: #3e8524;
+  --color-orange-deep: #c8481a; /* design usa #D24E1B (4,4:1); um tom abaixo para 4,5:1 */
+  --color-orange-light: #ff8b5e;
+  --color-amber: #e8c86a;
+  --color-amber-ink: #7a6320;
 
   --radius: 8px;
 }
@@ -46,8 +46,8 @@
   }
   button:not(:disabled),
   select,
-  [role="tab"],
-  label:has(> input[type="checkbox"]:not(:disabled), > input[type="radio"]:not(:disabled), > input[type="file"]) {
+  [role='tab'],
+  label:has(> input[type='checkbox']:not(:disabled), > input[type='radio']:not(:disabled), > input[type='file']) {
     cursor: pointer;
   }
   :focus-visible,
@@ -56,8 +56,8 @@
     outline-offset: 2px;
     box-shadow: 0 0 0 2px #fff; /* anel branco: foco visível também sobre a sidebar escura */
   }
-  input[type="checkbox"],
-  input[type="radio"] {
+  input[type='checkbox'],
+  input[type='radio'] {
     accent-color: var(--color-blue-dark);
   }
   body:has(dialog[open]) {
@@ -78,23 +78,61 @@
     font-weight: 700;
     line-height: 1.2;
     white-space: nowrap;
-    transition: background-color 0.15s, border-color 0.15s;
+    transition:
+      background-color 0.15s,
+      border-color 0.15s;
   }
-  .btn:active:not(:disabled) { transform: translateY(1px); }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn-sm { padding: 6px 10px; }
-  .btn-lg { padding: 11px 18px; font-size: 15px; }
+  .btn:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn-sm {
+    padding: 6px 10px;
+  }
+  .btn-lg {
+    padding: 11px 18px;
+    font-size: 15px;
+  }
 
-  .btn-primary { background: var(--color-blue-dark); color: #fff; }
-  .btn-primary:hover:not(:disabled) { background: var(--color-blue-deep); }
-  .btn-success { background: var(--color-green-deep); color: #fff; }
-  .btn-success:hover:not(:disabled) { background: color-mix(in srgb, var(--color-green-deep) 85%, #000); }
-  .btn-danger { background: var(--color-orange-deep); color: #fff; }
-  .btn-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--color-orange-deep) 85%, #000); }
-  .btn-purple { background: var(--color-purple); color: #fff; }
-  .btn-purple:hover:not(:disabled) { background: color-mix(in srgb, var(--color-purple) 85%, #000); }
-  .btn-secondary { background: var(--color-panel); color: var(--color-ink); border-color: var(--color-panel-border); }
-  .btn-secondary:hover:not(:disabled) { background: var(--color-page-bg); }
+  .btn-primary {
+    background: var(--color-blue-dark);
+    color: #fff;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-blue-deep);
+  }
+  .btn-success {
+    background: var(--color-green-deep);
+    color: #fff;
+  }
+  .btn-success:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-green-deep) 85%, #000);
+  }
+  .btn-danger {
+    background: var(--color-orange-deep);
+    color: #fff;
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-orange-deep) 85%, #000);
+  }
+  .btn-purple {
+    background: var(--color-purple);
+    color: #fff;
+  }
+  .btn-purple:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-purple) 85%, #000);
+  }
+  .btn-secondary {
+    background: var(--color-panel);
+    color: var(--color-ink);
+    border-color: var(--color-panel-border);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--color-page-bg);
+  }
 
   .field {
     width: 100%;
@@ -106,11 +144,26 @@
     color: var(--color-ink);
     font-size: 12px;
   }
-  .field::placeholder { color: var(--color-ink-soft); }
-  .field:hover:not(:disabled) { border-color: var(--color-ink-soft); }
-  .field:focus-visible { outline-offset: 0; border-color: var(--color-blue-dark); }
-  .field:disabled { background: var(--color-page-bg); cursor: not-allowed; }
-  textarea.field { height: auto; padding: 9px; line-height: 1.5; resize: vertical; }
+  .field::placeholder {
+    color: var(--color-ink-soft);
+  }
+  .field:hover:not(:disabled) {
+    border-color: var(--color-ink-soft);
+  }
+  .field:focus-visible {
+    outline-offset: 0;
+    border-color: var(--color-blue-dark);
+  }
+  .field:disabled {
+    background: var(--color-page-bg);
+    cursor: not-allowed;
+  }
+  textarea.field {
+    height: auto;
+    padding: 9px;
+    line-height: 1.5;
+    resize: vertical;
+  }
 
   .label {
     display: block;
@@ -132,7 +185,7 @@
     transition: background-color 0.15s;
   }
   .switch::before {
-    content: "";
+    content: '';
     position: absolute;
     top: 2px;
     left: 2px;
@@ -142,66 +195,102 @@
     background: var(--color-panel);
     transition: transform 0.15s;
   }
-  .switch:checked { background: var(--color-green-deep); }
-  .switch:checked::before { transform: translateX(28px); }
+  .switch:checked {
+    background: var(--color-green-deep);
+  }
+  .switch:checked::before {
+    transform: translateX(28px);
+  }
 
   /* Dois input[type=range] sobrepostos; só os thumbs recebem ponteiro */
-  .dual-range { position: relative; height: 18px; }
-  .dual-range input {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 18px;
-    margin: 0;
-    appearance: none;
-    background: none;
-    pointer-events: none;
-  }
-  .dual-range input:focus-visible { outline: none; box-shadow: none; }
-  .dual-range input::-moz-range-track { background: transparent; }
-  .dual-range input::-webkit-slider-thumb {
-    appearance: none;
-    pointer-events: auto;
-    width: 18px;
-    height: 18px;
-    border: 1px solid var(--color-ink-soft);
-    border-radius: 50%;
-    background: var(--color-panel);
-  }
-  .dual-range input::-moz-range-thumb {
-    pointer-events: auto;
-    box-sizing: border-box;
-    width: 18px;
-    height: 18px;
-    border: 1px solid var(--color-ink-soft);
-    border-radius: 50%;
-    background: var(--color-panel);
-  }
-  .dual-range input:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--color-blue-dark); outline-offset: 2px; }
-  .dual-range input:focus-visible::-moz-range-thumb { outline: 2px solid var(--color-blue-dark); outline-offset: 2px; }
 
   /* Entrada da página: blocos sobem em cascata; modal abre com leve zoom */
-  .stagger > * { animation: subir 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
-  .stagger > :nth-child(2) { animation-delay: 60ms; }
-  .stagger > :nth-child(3) { animation-delay: 120ms; }
-  .stagger > :nth-child(4) { animation-delay: 180ms; }
-  .stagger > :nth-child(n + 5) { animation-delay: 240ms; }
+  .stagger > * {
+    animation: subir 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .stagger > :nth-child(2) {
+    animation-delay: 60ms;
+  }
+  .stagger > :nth-child(3) {
+    animation-delay: 120ms;
+  }
+  .stagger > :nth-child(4) {
+    animation-delay: 180ms;
+  }
+  .stagger > :nth-child(n + 5) {
+    animation-delay: 240ms;
+  }
 
-  dialog[open] { animation: surgir 0.2s ease-out; }
+  dialog[open] {
+    animation: surgir 0.2s ease-out;
+  }
 }
 
 @keyframes subir {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 @keyframes surgir {
-  from { opacity: 0; transform: scale(0.97); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Aviso de sucesso: entra deslizando do canto e a barrinha mostra quanto falta para sumir sozinho */
+@keyframes aviso-entra {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  60% {
+    transform: translateY(-2px) scale(1.01);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes aviso-tempo {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+/* Pulso no botão que acabou de salvar */
+@keyframes selo-ok {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, ::before, ::after {
+  /* biome-ignore-start lint/complexity/noImportantStyles: quem pede menos movimento tem de vencer qualquer animacao de componente */
+  *,
+  ::before,
+  ::after {
     animation: none !important;
     transition: none !important;
   }
+  /* biome-ignore-end lint/complexity/noImportantStyles: fim da excecao */
 }

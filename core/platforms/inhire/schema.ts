@@ -141,7 +141,10 @@ export async function lerSchemaFormulario(tenant: string, jobId: string): Promis
   const detalhe = await detalheVaga(tenant, jobId);
   const perguntas = perguntasDaDiversidade(detalhe);
   let typeformId: string | null = null;
-  const sub = await fetch(`https://api.inhire.app/forms/public/job-id/${jobId}/subscription`, { headers: { 'x-tenant': tenant, 'x-inhire-client': 'web-inhire', accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+  const sub = await fetch(`https://api.inhire.app/forms/public/job-id/${jobId}/subscription`, {
+    headers: { 'x-tenant': tenant, 'x-inhire-client': 'web-inhire', accept: 'application/json' },
+    signal: AbortSignal.timeout(15000),
+  });
   if (sub.ok) {
     typeformId = ((await sub.json()) as { typeformId?: string }).typeformId ?? null;
   } else if (sub.status !== 404) {
@@ -150,13 +153,23 @@ export async function lerSchemaFormulario(tenant: string, jobId: string): Promis
   // Alguns formId são UUIDs de formulários nativos do InHire (não existem no Typeform: 404). Nesse caso as
   // perguntas só serão conhecidas no navegador (form-app), e o motor sequencial resolve na hora.
   if (typeformId && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(typeformId)) {
-    const tf = await fetch(`https://form.typeform.com/forms/${encodeURIComponent(typeformId)}`, { headers: { accept: 'application/json', 'user-agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(15000) });
+    const tf = await fetch(`https://form.typeform.com/forms/${encodeURIComponent(typeformId)}`, {
+      headers: { accept: 'application/json', 'user-agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(15000),
+    });
     if (tf.ok) perguntas.push(...perguntasDoTypeform((await tf.json()) as DefinicaoTypeform));
     else if (tf.status !== 404) throw new Error(`Typeform ${tf.status} ao ler as perguntas da vaga`);
   }
   const cfg = typeformId ? await configTenant(tenant).catch(() => null) : null;
   const fluxoCondicional = !!cfg?.publicCapabilities?.includes('requireCustomFormCompletion');
-  const schema: SchemaFormulario = { campos: detalhe.settings?.fields ?? [], obrigatorios: detalhe.settings?.requiredFields ?? [], contratos: detalhe.contractType ?? [], typeformId, perguntas, fluxoCondicional };
+  const schema: SchemaFormulario = {
+    campos: detalhe.settings?.fields ?? [],
+    obrigatorios: detalhe.settings?.requiredFields ?? [],
+    contratos: detalhe.contractType ?? [],
+    typeformId,
+    perguntas,
+    fluxoCondicional,
+  };
   cache.set(chave, { em: Date.now(), schema });
   return schema;
 }

@@ -24,7 +24,12 @@ export function dividirSecoes(md: string): Secao[] {
   return secoes;
 }
 
-const juntar = (secoes: Secao[]) => secoes.map(s => (s.titulo ? `## ${s.titulo}\n` : '') + s.linhas.join('\n')).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+const juntar = (secoes: Secao[]) =>
+  secoes
+    .map(s => (s.titulo ? `## ${s.titulo}\n` : '') + s.linhas.join('\n'))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 
 const eh = (titulo: string, ...chaves: string[]) => chaves.some(k => normalizar(titulo).includes(k));
 
@@ -32,7 +37,8 @@ const eh = (titulo: string, ...chaves: string[]) => chaves.some(k => normalizar(
 function blocos(linhas: string[]): string[][] {
   const out: string[][] = [];
   for (const l of linhas) {
-    const inicio = /^\*\*.+\*\*$/.test(l.trim()) || (l.trim().length > 0 && l.trim().length <= 70 && !l.trim().startsWith('-') && out.length > 0 && out[out.length - 1].some(x => x.trim().startsWith('-')));
+    const inicio =
+      /^\*\*.+\*\*$/.test(l.trim()) || (l.trim().length > 0 && l.trim().length <= 70 && !l.trim().startsWith('-') && out.length > 0 && out[out.length - 1].some(x => x.trim().startsWith('-')));
     if (inicio || out.length === 0) out.push([l]);
     else out[out.length - 1].push(l);
   }
@@ -133,7 +139,11 @@ PROIBIDO: remover experiências, formações, seções ou dados reais.
 Mantenha o formato Markdown do original (# nome, ## seções, - itens, **títulos em negrito**). Responda SOMENTE com o currículo adaptado em Markdown, sem comentários.`;
 
 /** Adaptação por IA + validação. `completar` recebe (system, usuário) e devolve o texto do modelo. */
-export async function adaptarComIA(original: string, vaga: Pick<Vaga, 'titulo' | 'skills' | 'descricao'>, completar: (system: string, usuario: string) => Promise<string>): Promise<Adaptacao & { problemas: string[] }> {
+export async function adaptarComIA(
+  original: string,
+  vaga: Pick<Vaga, 'titulo' | 'skills' | 'descricao'>,
+  completar: (system: string, usuario: string) => Promise<string>,
+): Promise<Adaptacao & { problemas: string[] }> {
   const skillsCv = new Set(extrairSkills(original));
   const comuns = vaga.skills.filter(s => skillsCv.has(s));
   const proibidas = vaga.skills.filter(s => !skillsCv.has(s));
@@ -145,8 +155,18 @@ export async function adaptarComIA(original: string, vaga: Pick<Vaga, 'titulo' |
     .trim();
   const problemas = validarEntidades(original, markdown);
 
-  const antes = new Set(original.split('\n').map(l => l.trim()).filter(Boolean));
-  const depois = new Set(markdown.split('\n').map(l => l.trim()).filter(Boolean));
+  const antes = new Set(
+    original
+      .split('\n')
+      .map(l => l.trim())
+      .filter(Boolean),
+  );
+  const depois = new Set(
+    markdown
+      .split('\n')
+      .map(l => l.trim())
+      .filter(Boolean),
+  );
   const diff: string[] = [];
   for (const l of depois) if (!antes.has(l)) diff.push(`+ ${l.slice(0, 140)}`);
   for (const l of antes) if (!depois.has(l)) diff.push(`− ${l.slice(0, 140)}`);

@@ -7,16 +7,10 @@ import { SENSIVEIS_PADRAO, type ConfigSensiveis } from '../src/sensiveis.ts';
 
 export const AUTOMACAO_PADRAO: ConfigAutomacao = {
   configurada: false,
-  plataformas: [],
-  curriculo: null,
   area: '',
-  cargo: '',
   senioridade: '',
-  local: '',
-  salarioMin: 1500,
-  salarioMax: 6000,
   regimes: ['remoto', 'hibrido', 'presencial'],
-  intervalo: 15,
+  intervaloSegundos: 180,
   limiteDiario: 20,
   janela: '08:00-20:00',
   modo: 'manual',
@@ -26,6 +20,9 @@ export const AUTOMACAO_PADRAO: ConfigAutomacao = {
   ensaio: true,
   mostrarNavegador: false,
   scoreMinimo: 30,
+  cargoRigido: false,
+  presencialSoNaMinhaCidade: true,
+  modoPerguntas: 'manual',
 };
 
 const PERGUNTAS_PADRAO: Pergunta[] = [
@@ -45,7 +42,14 @@ export const ler = {
   perfil: () => kv.get<Perfil | null>('perfil', null),
   curriculos: () => kv.get<Arquivo[]>('curriculos', []),
   conexoes: () => kv.get<Record<string, Conexao>>('conexoes', {}),
-  automacao: () => ({ ...AUTOMACAO_PADRAO, ...kv.get<Partial<ConfigAutomacao>>('automacao', {}) }),
+  automacao: (): ConfigAutomacao => {
+    // Só as chaves que existem hoje: campo removido do produto continua no blob gravado e voltaria a aparecer
+    // no front como se ainda valesse algo. O padrão define o que é configuração; o resto é resíduo.
+    const salvo = kv.get<Record<string, unknown>>('automacao', {});
+    const atual = { ...AUTOMACAO_PADRAO } as Record<string, unknown>;
+    for (const chave of Object.keys(AUTOMACAO_PADRAO)) if (salvo[chave] !== undefined) atual[chave] = salvo[chave];
+    return atual as unknown as ConfigAutomacao;
+  },
   robo: () => kv.get<EstadoRobo>('robo', 'pausado'),
   perguntas: () => kv.get<Pergunta[]>('perguntas', PERGUNTAS_PADRAO),
   sensiveis: () => ({ ...SENSIVEIS_PADRAO, ...kv.get<Partial<ConfigSensiveis>>('sensiveis', {}) }),

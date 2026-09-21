@@ -71,7 +71,8 @@ function Conectando({ offline, tentar }: { offline: boolean; tentar: () => void 
           <>
             <p className="mt-4 text-sm font-bold">O núcleo do AutoCV não está rodando.</p>
             <p className="mt-1.5 text-xs text-ink-soft">
-              Ele é o processo que busca vagas e preenche candidaturas. Abra o app pelo <code className="font-mono">start.bat</code> ou rode <code className="font-mono">npm run core</code> em outro terminal.
+              Ele é o processo que busca vagas e preenche candidaturas. Abra o app pelo <code className="font-mono">start.bat</code> ou rode <code className="font-mono">npm run core</code> em outro
+              terminal.
             </p>
             <button type="button" className="btn btn-primary mt-4" onClick={tentar}>
               <RefreshCw size={16} aria-hidden />

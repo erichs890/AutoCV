@@ -31,7 +31,9 @@ export const ROTULO_FIXO: [RegExp, PapelFixo][] = [
   [/nome completo/i, 'nome'],
   [/^(seu )?(melhor )?e-?mail/i, 'email'],
   [/celular|telefone/i, 'celular'],
-  [/^cpf\b/i, 'cpf'],
+  // CPF em qualquer ponto do rótulo: além do campo padrão, empresas perguntam em texto livre
+  // ("Coloque aqui o seu CPF" — QI Tech, 20/09/2026). Exceções em CPF_DE_TERCEIRO.
+  [/\bcpf\b/i, 'cpf'],
   [/linkedin/i, 'linkedin'],
   [/pretens[aã]o|expectativa salarial/i, 'pretensao'],
   [/^pa[ií]s\b/i, 'pais'],
@@ -41,9 +43,19 @@ export const ROTULO_FIXO: [RegExp, PapelFixo][] = [
   [/pol[ií]tica de privacidade|termos de uso|li e concordo/i, 'termos'],
 ];
 
-// Botões de navegação: "próximo" muda de aba sem enviar; "final" cria a candidatura (POST com reCAPTCHA)
+/**
+ * "CPF do responsável", "CPF da empresa", "CPF do cônjuge": o dado é de outra pessoa, não do candidato.
+ * Preencher com o CPF do usuário aqui seria erro grave — nesses casos a pergunta volta para ele.
+ */
+export const CPF_DE_TERCEIRO = /\bcpf\b[^?]*?\b(?:d[oae]s?)\s+(respons[áa]vel|c[ôo]njuge|s[óo]ci[oa]|dependente|empresa|contato|indicad|representante|m[ãa]e|pai|titular)/i;
+
+// Botões de navegação: "próximo" muda de aba sem enviar; "final" cria a candidatura (POST com reCAPTCHA).
+// O texto do botão final MUDA de empresa para empresa (levantado em 20/09/2026 nas páginas reais):
+// "Continuar inscrição" (QI Tech, BIX) e "Candidatar-se para a vaga" (Ninecon, Insider Store) convivem.
+// "candidatar-se"/"candidatar-me" é exigido de propósito: o botão "Candidatar" do topo da página só rola
+// a tela até o formulário — clicar nele não envia nada e o robô ficaria preso.
 export const BOTAO_PROXIMO = /^(avan[çc]ar|pr[óo]xim[oa]|seguinte|continuar)$/i;
-export const BOTAO_FINAL = /continuar inscri|enviar|finalizar|concluir|submit/i;
+export const BOTAO_FINAL = /continuar inscri|candidatar[-\s]?(se|me)\b|enviar candidatura|enviar inscri|^enviar$|finalizar|concluir|submit/i;
 
 // Sinais de que o InHire aceitou a candidatura (texto da página).
 // A prova dura é a resposta HTTP das rotas de envio (ROTAS_ENVIO); este texto é o reforço, não a única evidência —

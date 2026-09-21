@@ -8,7 +8,8 @@ import type { Frame, Locator, Page } from 'playwright';
 import type { PerguntaExtra } from '../../../src/types.ts';
 import { PERGUNTA_CIDADE, PERGUNTA_CPF, type DadosCandidatura, type Log, type ResultadoCandidatura } from '../adapter.ts';
 import { normalizar, similaridade } from '../../resume/texto.ts';
-import { BOTAO_ANEXAR, BOTAO_FINAL, BOTAO_PROXIMO, CAMPO_FIXO, ROTULO_FIXO, SEQUENCIAL, SUCESSO, type PapelFixo } from './selectors.ts';
+import { fatorLocal, lerLocal } from '../../resume/score.ts';
+import { BOTAO_ANEXAR, BOTAO_FINAL, BOTAO_PROXIMO, CAMPO_FIXO, CPF_DE_TERCEIRO, ROTULO_FIXO, SEQUENCIAL, SUCESSO, type PapelFixo } from './selectors.ts';
 
 export type Raiz = Page | Frame;
 export type TipoCampo = 'texto' | 'textarea' | 'arquivo' | 'radio' | 'checkbox' | 'grupo' | 'select' | 'dropdown' | 'desconhecido';
@@ -66,7 +67,11 @@ export async function descobrirCampos(raiz: Raiz): Promise<CampoDom[]> {
       const s = getComputedStyle(el);
       return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && !el.closest('[inert], [aria-hidden="true"]');
     };
-    const limpar = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').replace(/\s*\*\s*$/, '').trim();
+    const limpar = (s: string | null | undefined) =>
+      (s ?? '')
+        .replace(/\s+/g, ' ')
+        .replace(/\s*\*\s*$/, '')
+        .trim();
     // Primeiro trecho de texto de um rótulo ("Pessoa preta" sem a descrição que vem depois)
     const primeiroTexto = (el: Node): string => {
       for (const filho of el.childNodes) {
@@ -138,7 +143,16 @@ export async function descobrirCampos(raiz: Raiz): Promise<CampoDom[]> {
       const bruto = rotuloBruto(dd);
       const conteudo = dd.querySelector('.react-dropdown-select-content')?.textContent?.trim() ?? '';
       const preenchido = (interno?.value ?? '') !== '' || (conteudo !== '' && !/^(selecione|informe|pesquise|escolha|selecionar|search|select)/i.test(conteudo));
-      saida.push({ i: marcar(dd), tipo: 'dropdown', nome: interno?.getAttribute('name') ?? '', rotulo: limpar(bruto), obrigatorio: /\*/.test(bruto), opcoes: [], preenchido, html: dd.outerHTML.slice(0, 400) });
+      saida.push({
+        i: marcar(dd),
+        tipo: 'dropdown',
+        nome: interno?.getAttribute('name') ?? '',
+        rotulo: limpar(bruto),
+        obrigatorio: /\*/.test(bruto),
+        opcoes: [],
+        preenchido,
+        html: dd.outerHTML.slice(0, 400),
+      });
     }
 
     const radios = new Map<string, HTMLInputElement[]>();
@@ -200,7 +214,16 @@ export async function descobrirCampos(raiz: Raiz): Promise<CampoDom[]> {
       if (lista.length === 1) {
         const cb = lista[0];
         const bruto = rotuloBruto(cb);
-        saida.push({ i: marcar(cb), tipo: 'checkbox', nome: cb.name, rotulo: limpar(bruto).slice(0, 200), obrigatorio: cb.required || /\*/.test(bruto), opcoes: [], preenchido: cb.checked, html: cb.outerHTML.slice(0, 400) });
+        saida.push({
+          i: marcar(cb),
+          tipo: 'checkbox',
+          nome: cb.name,
+          rotulo: limpar(bruto).slice(0, 200),
+          obrigatorio: cb.required || /\*/.test(bruto),
+          opcoes: [],
+          preenchido: cb.checked,
+          html: cb.outerHTML.slice(0, 400),
+        });
         continue;
       }
       const bruto = rotuloBruto(cont);
@@ -224,7 +247,7 @@ export function melhorOpcao(opcoes: string[], valor: string): number {
   const v = normalizar(valor);
   if (!v) return -1;
   const ns = opcoes.map(normalizar);
-  let k = ns.findIndex(o => o === v);
+  let k = ns.indexOf(v);
   if (k < 0) k = ns.findIndex(o => o.startsWith(v) || v.startsWith(o));
   if (k < 0) k = ns.findIndex(o => o.includes(v) || v.includes(o));
   if (k < 0) {
@@ -240,7 +263,11 @@ export function melhorOpcao(opcoes: string[], valor: string): number {
   return k;
 }
 
-const dividirMultipla = (valor: string) => valor.split(/\s*\|\s*|\s*;\s*/).map(s => s.trim()).filter(Boolean);
+const dividirMultipla = (valor: string) =>
+  valor
+    .split(/\s*\|\s*|\s*;\s*/)
+    .map(s => s.trim())
+    .filter(Boolean);
 
 // ─── 1.2 Classificação: fixo × pergunta extra ───────────────────────────────
 export type Resolucao =
@@ -256,7 +283,43 @@ export function papelDe(campo: Pick<CampoDom, 'nome' | 'rotulo' | 'tipo'>): Pape
   if (campo.nome.startsWith('questionsDiversity')) return null;
   const porRotulo = ROTULO_FIXO.find(([re]) => re.test(campo.rotulo))?.[1] ?? null;
   if (porRotulo === 'curriculo' && campo.tipo !== 'arquivo') return null;
+  // CPF só preenche campo de digitar, e só quando é o do próprio candidato: "Você possui CPF?" (sim/não)
+  // ou "CPF do responsável" viram pergunta normal em vez de receberem o número.
+  if (porRotulo === 'cpf' && (CPF_DE_TERCEIRO.test(campo.rotulo) || !['texto', 'textarea'].includes(campo.tipo))) return null;
   return porRotulo;
+}
+
+/**
+ * "Você tem disponibilidade para trabalhar no modelo presencial em São Paulo, Pinheiros - SP?"
+ *
+ * Responder "Sim" no automático era declarar, em nome do usuário e para um empregador real, uma disponibilidade
+ * que pode não existir — a vaga presencial passa pelo filtro de regime mesmo estando do outro lado do país.
+ * Regra: sem exigência de presença, ou presença na cidade/estado do usuário → "Sim". Cidade diferente → pergunta.
+ */
+export function disponibilidadeNoModelo(campo: CampoDom, dados: DadosCandidatura): Resolucao {
+  const sim = (): Resolucao => {
+    const k = melhorOpcao(campo.opcoes, 'Sim');
+    return { acao: 'valor', valor: k >= 0 ? campo.opcoes[k] : 'Sim' };
+  };
+  const perguntar = (): Resolucao => ({
+    acao: 'pergunta',
+    pergunta: {
+      rotulo: campo.rotulo || 'Você tem disponibilidade para o modelo da vaga?',
+      tipo: campo.opcoes.length ? 'opcoes' : 'texto',
+      opcoes: campo.opcoes.length ? campo.opcoes : undefined,
+      obrigatoria: true,
+    },
+  });
+
+  // Só entra em dúvida quando há presença física em jogo
+  if (!/presencial|h[íi]brid|no escrit[óo]rio|in\s?loco/i.test(campo.rotulo)) return sim();
+  // Sem a cidade do usuário não dá para comparar: melhor perguntar do que afirmar
+  if (!dados.cidade.trim()) return perguntar();
+  // O lugar vem no próprio rótulo, depois do último "em": "... presencial em São Paulo, Brasil, Pinheiros - SP?"
+  const local = (campo.rotulo.match(/^.*\bem\s+(.+?)\s*\?*\s*$/i)?.[1] ?? '').trim();
+  const lido = local ? lerLocal(local) : { cidade: '', uf: '' };
+  if (!lido.cidade && !lido.uf) return perguntar(); // não deu para saber onde é: não afirmo nada
+  return fatorLocal(local, dados.cidade).fator >= 0.6 ? sim() : perguntar();
 }
 
 export function resolverCampo(campo: CampoDom, dados: DadosCandidatura): Resolucao {
@@ -278,7 +341,9 @@ export function resolverCampo(campo: CampoDom, dados: DadosCandidatura): Resoluc
     case 'celular':
       return { acao: 'valor', valor: dados.celular.replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, ''), mascarado: true };
     case 'cpf':
-      return dados.cpf.replace(/\D/g, '').length === 11 ? { acao: 'valor', valor: dados.cpf.replace(/\D/g, ''), mascarado: true } : { acao: 'pergunta', pergunta: { rotulo: PERGUNTA_CPF, tipo: 'texto' } };
+      return dados.cpf.replace(/\D/g, '').length === 11
+        ? { acao: 'valor', valor: dados.cpf.replace(/\D/g, ''), mascarado: true }
+        : { acao: 'pergunta', pergunta: { rotulo: PERGUNTA_CPF, tipo: 'texto' } };
     case 'linkedin':
       return dados.linkedin ? { acao: 'valor', valor: dados.linkedin } : extra('texto');
     case 'pretensao':
@@ -290,14 +355,14 @@ export function resolverCampo(campo: CampoDom, dados: DadosCandidatura): Resoluc
     case 'cep':
       return extra('texto');
     case 'modelo':
-      return { acao: 'valor', valor: 'Sim' };
+      return disponibilidadeNoModelo(campo, dados);
     case 'regime': {
       const k = dados.regime ? melhorOpcao(campo.opcoes, dados.regime) : -1;
-      return { acao: 'valor', valor: k >= 0 ? campo.opcoes[k] : dados.regime ?? campo.opcoes[0] ?? '' };
+      return { acao: 'valor', valor: k >= 0 ? campo.opcoes[k] : (dados.regime ?? campo.opcoes[0] ?? '') };
     }
     case 'indicacao': {
       const salva = dados.responder({ rotulo: campo.rotulo || 'Foi indicado por alguém da empresa?', tipo: 'opcoes', opcoes: campo.opcoes });
-      return { acao: 'valor', valor: salva ?? (campo.opcoes.find(o => /^n[ãa]o/i.test(o)) ?? campo.opcoes[0] ?? 'Não') };
+      return { acao: 'valor', valor: salva ?? campo.opcoes.find(o => /^n[ãa]o/i.test(o)) ?? campo.opcoes[0] ?? 'Não' };
     }
     case 'curriculo':
       return { acao: 'arquivo' };
@@ -330,10 +395,14 @@ async function abrirDropdown(raiz: Raiz, loc: Locator, filtro?: string): Promise
   if (filtro) {
     await p.keyboard.type(filtro, { delay: 30 });
     // Lista filtrada (ou carregada da API, no caso da cidade) — espera aparecer algo parecido com o filtro
-    await ate(async () => {
-      const t = (await lerOpcoes(opcoes)).map(o => o.textoPrincipal);
-      return t.length > 0 && melhorOpcao(t, filtro) >= 0;
-    }, 8000, 300);
+    await ate(
+      async () => {
+        const t = (await lerOpcoes(opcoes)).map(o => o.textoPrincipal);
+        return t.length > 0 && melhorOpcao(t, filtro) >= 0;
+      },
+      8000,
+      300,
+    );
   }
   return lerOpcoes(opcoes);
 }
@@ -361,7 +430,9 @@ function lerOpcoes(opcoes: Locator): Promise<OpcaoDropdown[]> {
 }
 
 async function fecharDropdown(raiz: Raiz) {
-  await pagina(raiz).keyboard.press('Escape').catch(() => {});
+  await pagina(raiz)
+    .keyboard.press('Escape')
+    .catch(() => {});
 }
 
 export async function lerOpcoesDropdown(raiz: Raiz, loc: Locator): Promise<string[]> {
@@ -463,7 +534,7 @@ async function preencherCampo(raiz: Raiz, c: CampoDom, r: Resolucao, dados: Dado
           throw new Error(`não sei preencher "${rotulo}" (tipo ${c.tipo})`);
       }
       const mostrado = /senha|password/i.test(rotulo) ? '•••' : valores.join(' | ');
-      log('info', `"${rotulo}": ${mostrado.length > 60 ? mostrado.slice(0, 57) + '...' : mostrado}.`);
+      log('info', `"${rotulo}": ${mostrado.length > 60 ? `${mostrado.slice(0, 57)}...` : mostrado}.`);
       return true;
     }
     case 'pergunta':
@@ -472,18 +543,37 @@ async function preencherCampo(raiz: Raiz, c: CampoDom, r: Resolucao, dados: Dado
 }
 
 // ─── 1.4 Navegação entre etapas ─────────────────────────────────────────────
-async function acharBotao(raiz: Raiz): Promise<{ loc: Locator; texto: string; final: boolean } | null> {
-  const botoes = raiz.locator('button, input[type="submit"]');
-  const total = await botoes.count();
-  let final: { loc: Locator; texto: string; final: boolean } | null = null;
-  for (let i = 0; i < total; i++) {
-    const b = botoes.nth(i);
-    if (!(await b.isVisible().catch(() => false))) continue;
-    const texto = ((await b.textContent()) ?? (await b.getAttribute('value')) ?? '').replace(/\s+/g, ' ').trim();
-    if (BOTAO_PROXIMO.test(texto)) return { loc: b, texto, final: false };
-    if (!final && BOTAO_FINAL.test(texto)) final = { loc: b, texto, final: true };
+type Botao = { loc: Locator; texto: string; final: boolean };
+
+/**
+ * Botão de avançar/enviar da etapa. Duas sutilezas do InHire real:
+ *  - procura primeiro DENTRO do formulário: o cabeçalho da página tem um "Candidatar" que só rola a tela;
+ *  - o botão de verdade vem embrulhado num `<div role="button">` com o mesmo texto. O `<button>` interno é o
+ *    que habilita/desabilita, então ele tem preferência; o `div` fica de reserva para layouts sem `<button>`.
+ */
+async function acharBotao(raiz: Raiz): Promise<Botao | null> {
+  for (const escopo of ['form ', '']) {
+    const botoes = raiz.locator(`${escopo}button, ${escopo}input[type="submit"], ${escopo}[role="button"]`);
+    const total = await botoes.count().catch(() => 0);
+    let proximo: Botao | null = null;
+    let final: Botao | null = null;
+    for (let i = 0; i < total; i++) {
+      const b = botoes.nth(i);
+      if (!(await b.isVisible().catch(() => false))) continue;
+      const texto = ((await b.textContent()) ?? (await b.getAttribute('value')) ?? '').replace(/\s+/g, ' ').trim();
+      if (!texto) continue;
+      const real = ['BUTTON', 'INPUT'].includes(await b.evaluate(el => el.tagName).catch(() => ''));
+      // Primeiro achado vale; um <button> de verdade substitui um [role=button] já guardado com o mesmo papel
+      if (BOTAO_PROXIMO.test(texto)) {
+        if (!proximo || (real && proximo.texto === texto)) proximo = { loc: b, texto, final: false };
+      } else if (BOTAO_FINAL.test(texto)) {
+        if (!final || (real && final.texto === texto)) final = { loc: b, texto, final: true };
+      }
+    }
+    if (proximo) return proximo;
+    if (final) return final;
   }
-  return final;
+  return null;
 }
 
 const habilitado = async (loc: Locator) => (await loc.isEnabled()) && (await loc.getAttribute('aria-disabled')) !== 'true' && (await loc.getAttribute('data-disabled')) !== 'true';
@@ -501,7 +591,11 @@ async function errosVisiveis(raiz: Raiz): Promise<string[]> {
 // ─── Typeform (perguntas da empresa, depois de criar o talento) ─────────────
 // O Typeform mantém no DOM só o bloco atual e os vizinhos; o ativo é o único sem `inert`. Tudo acontece nele:
 // escolhas são botões role=radio/checkbox (texto "TeclaASim" = atalho + rótulo), texto é input/textarea, e OK avança.
-const limparOpcaoTypeform = (t: string) => t.replace(/^\s*(tecla|key)\s*[a-z0-9]\s*/i, '').replace(/\s+/g, ' ').trim();
+const limparOpcaoTypeform = (t: string) =>
+  t
+    .replace(/^\s*(tecla|key)\s*[a-z0-9]\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 export async function preencherTypeform(frame: Raiz, dados: DadosCandidatura, log: Log, ensaio: boolean): Promise<{ resultado: ResultadoCandidatura; etapa: EtapaDescoberta; respondidas: number }> {
   const etapa: EtapaDescoberta = { etapa: 0, origem: 'typeform', campos: [] };
@@ -512,7 +606,16 @@ export async function preencherTypeform(frame: Raiz, dados: DadosCandidatura, lo
   // O último bloco (com o Enviar) já existe no DOM como vizinho do penúltimo: só vale o Enviar do bloco ativo
   const submit = async () => ((await ativo().count()) ? ativo().locator('[data-qa*="submit-button"]').first() : frame.locator('[data-qa*="submit-button"]').first());
   const submitVisivel = async () => (await submit()).isVisible().catch(() => false);
-  const tituloDe = async (bloco: Locator) => ((await bloco.locator('[data-qa*="block-title"]').first().textContent().catch(() => '')) ?? '').replace(/\s+/g, ' ').trim();
+  const tituloDe = async (bloco: Locator) =>
+    (
+      (await bloco
+        .locator('[data-qa*="block-title"]')
+        .first()
+        .textContent()
+        .catch(() => '')) ?? ''
+    )
+      .replace(/\s+/g, ' ')
+      .trim();
   const falha = (motivo: string) => ({ resultado: { status: 'erro' as const, motivo }, etapa, respondidas });
 
   let anterior = '';
@@ -524,7 +627,11 @@ export async function preencherTypeform(frame: Raiz, dados: DadosCandidatura, lo
     const tituloBruto = await tituloDe(bloco);
     const chave = `${tipoBloco}|${tituloBruto}`;
     if (chave === anterior) {
-      const erro = await bloco.locator('[data-qa*="error-message"]').first().textContent().catch(() => '');
+      const erro = await bloco
+        .locator('[data-qa*="error-message"]')
+        .first()
+        .textContent()
+        .catch(() => '');
       return falha(`o Typeform não avançou de "${tituloBruto.slice(0, 60)}"${erro?.trim() ? `: ${erro.trim().slice(0, 100)}` : ''}`);
     }
     anterior = chave;
@@ -573,21 +680,28 @@ export async function preencherTypeform(frame: Raiz, dados: DadosCandidatura, lo
       }
     } else if (tipoBloco === 'dropdown') {
       await bloco.locator('input').first().fill(resposta);
-      const op = frame.locator('[role="option"], [data-qa*="dropdown-option"]').filter({ hasText: resposta.slice(0, 30) }).first();
+      const op = frame
+        .locator('[role="option"], [data-qa*="dropdown-option"]')
+        .filter({ hasText: resposta.slice(0, 30) })
+        .first();
       if (!(await ate(() => op.isVisible(), 5000))) return falha(`opção "${resposta}" não apareceu em "${titulo}"`);
       await op.click();
     } else {
       await bloco.locator('input, textarea').first().fill(resposta);
     }
     respondidas++;
-    log('info', `Typeform · "${titulo}": ${resposta.length > 60 ? resposta.slice(0, 57) + '...' : resposta}.`);
+    log('info', `Typeform · "${titulo}": ${resposta.length > 60 ? `${resposta.slice(0, 57)}...` : resposta}.`);
     if (await submitVisivel()) break; // era a última pergunta
     await avancar();
   }
   if (!(await ate(submitVisivel, 5000))) return falha('botão de envio do Typeform não apareceu');
   if (ensaio) return { resultado: { status: 'ensaio', captura: '', pronto: true }, etapa, respondidas };
   await (await submit()).click();
-  const agradeceu = await ate(async () => (await frame.locator('[data-qa*="thankyou"], [data-qa*="thank"]').count()) > 0 || /obrigad|enviad|conclu/i.test(await frame.evaluate(() => document.body.innerText)), 20000, 500);
+  const agradeceu = await ate(
+    async () => (await frame.locator('[data-qa*="thankyou"], [data-qa*="thank"]').count()) > 0 || /obrigad|enviad|conclu/i.test(await frame.evaluate(() => document.body.innerText)),
+    20000,
+    500,
+  );
   return agradeceu ? { resultado: { status: 'enviada' }, etapa, respondidas } : falha('o Typeform não confirmou o envio das respostas');
 }
 
@@ -656,7 +770,8 @@ async function perguntaAtual(raiz: Raiz): Promise<string> {
 }
 
 // Escolhas que não são <input>: cartões/botões com role radio|option|checkbox, fora de blocos inativos
-const SELETOR_ESCOLHAS = '[role="radio"]:not(input):not([inert] *):not([aria-hidden="true"] *), [role="option"]:not([inert] *):not([aria-hidden="true"] *), [role="checkbox"]:not(input):not([inert] *):not([aria-hidden="true"] *)';
+const SELETOR_ESCOLHAS =
+  '[role="radio"]:not(input):not([inert] *):not([aria-hidden="true"] *), [role="option"]:not([inert] *):not([aria-hidden="true"] *), [role="checkbox"]:not(input):not([inert] *):not([aria-hidden="true"] *)';
 
 /** Escolhas visíveis da tela atual (padrão dos questionários sequenciais). */
 async function escolhasVisiveis(raiz: Raiz): Promise<{ textos: string[]; multipla: boolean }> {
@@ -680,7 +795,7 @@ async function botaoPor(raiz: Raiz, re: RegExp): Promise<Locator | null> {
   for (let i = 0; i < n; i++) {
     const b = botoes.nth(i);
     if (!(await b.isVisible().catch(() => false))) continue;
-    const texto = (((await b.textContent()) ?? '') + ' ' + ((await b.getAttribute('aria-label')) ?? '')).replace(/\s+/g, ' ').trim();
+    const texto = `${(await b.textContent()) ?? ''} ${(await b.getAttribute('aria-label')) ?? ''}`.replace(/\s+/g, ' ').trim();
     if (re.test(texto) || re.test(((await b.getAttribute('aria-label')) ?? '').trim())) return b;
   }
   return null;
@@ -692,7 +807,8 @@ async function botaoPor(raiz: Raiz, re: RegExp): Promise<Locator | null> {
  */
 export async function preencherSequencialGenerico(raiz: Raiz, dados: DadosCandidatura, log: Log, ensaio: boolean, etapa: EtapaDescoberta): Promise<SaidaSequencial & { respondidas: number }> {
   let respondidas = 0;
-  if (!(await esperarQuestionario(raiz))) return { status: 'erro', motivo: 'o questionário do InHire (form-app) não carregou: ficou em branco por 20 s. Tente de novo mais tarde ou envie esta vaga manualmente', respondidas };
+  if (!(await esperarQuestionario(raiz)))
+    return { status: 'erro', motivo: 'o questionário do InHire (form-app) não carregou: ficou em branco por 20 s. Tente de novo mais tarde ou envie esta vaga manualmente', respondidas };
   const p = pagina(raiz);
 
   // ETAPA 1: boas-vindas ("Responda as perguntas para finalizar sua inscrição" → Iniciar). Ausência não é erro.
@@ -732,7 +848,11 @@ export async function preencherSequencialGenerico(raiz: Raiz, dados: DadosCandid
     if (final && (await telaRespondida())) return enviar(final);
     if (assinaturaTela === anterior && ++repetidas >= 2) {
       const html = await raiz.evaluate(() => (document.querySelector('main, form, [role="main"]') ?? document.body).outerHTML.slice(0, 1500)).catch(() => '');
-      return { status: 'erro', motivo: `o questionário não avançou de "${pergunta.slice(0, 60) || '(tela sem pergunta reconhecível)'}"; revise manualmente. HTML: ${html.replace(/\s+/g, ' ').slice(0, 300)}`, respondidas };
+      return {
+        status: 'erro',
+        motivo: `o questionário não avançou de "${pergunta.slice(0, 60) || '(tela sem pergunta reconhecível)'}"; revise manualmente. HTML: ${html.replace(/\s+/g, ' ').slice(0, 300)}`,
+        respondidas,
+      };
     }
     if (assinaturaTela !== anterior) repetidas = 0;
     anterior = assinaturaTela;
@@ -805,7 +925,12 @@ export async function preencherSequencialGenerico(raiz: Raiz, dados: DadosCandid
       return `${await perguntaAtual(raiz)}|${c2.map(c => c.nome + c.rotulo).join(',')}|${e2.textos.join(',')}` !== antes;
     };
     // Enter só chega ao questionário se ele tiver o foco (iframe): clicar no título é inofensivo e garante isso
-    if ('page' in raiz) await raiz.locator('h1, h2, h3, legend, [data-qa*="title"]').first().click({ timeout: 1500 }).catch(() => {});
+    if ('page' in raiz)
+      await raiz
+        .locator('h1, h2, h3, legend, [data-qa*="title"]')
+        .first()
+        .click({ timeout: 1500 })
+        .catch(() => {});
     await p.keyboard.press('Enter');
     if (!(await ate(mudou, 3000, 300))) {
       const proximo = await botaoPor(raiz, SEQUENCIAL.proximo);
@@ -823,11 +948,23 @@ export async function preencherSequencialGenerico(raiz: Raiz, dados: DadosCandid
 }
 
 /** ETAPA 3: ponto único de entrada do modo sequencial; escolhe o motor pela origem detectada. */
-export async function preencherSequencial(modo: Extract<ModoEtapa, { modo: 'sequencial' }>, dados: DadosCandidatura, log: Log, ensaio: boolean): Promise<{ saida: SaidaSequencial; etapa: EtapaDescoberta; respondidas: number }> {
+export async function preencherSequencial(
+  modo: Extract<ModoEtapa, { modo: 'sequencial' }>,
+  dados: DadosCandidatura,
+  log: Log,
+  ensaio: boolean,
+): Promise<{ saida: SaidaSequencial; etapa: EtapaDescoberta; respondidas: number }> {
   log('info', `Questionário sequencial detectado (${modo.origem}).`);
   if (modo.motor === 'typeform') {
     const t = await preencherTypeform(modo.raiz, dados, log, ensaio);
-    const saida: SaidaSequencial = t.resultado.status === 'enviada' ? { status: 'concluido' } : t.resultado.status === 'ensaio' ? { status: 'ensaio' } : t.resultado.status === 'pergunta' ? { status: 'pergunta', pergunta: t.resultado.pergunta } : { status: 'erro', motivo: t.resultado.motivo };
+    const saida: SaidaSequencial =
+      t.resultado.status === 'enviada'
+        ? { status: 'concluido' }
+        : t.resultado.status === 'ensaio'
+          ? { status: 'ensaio' }
+          : t.resultado.status === 'pergunta'
+            ? { status: 'pergunta', pergunta: t.resultado.pergunta }
+            : { status: 'erro', motivo: t.resultado.motivo };
     return { saida, etapa: t.etapa, respondidas: t.respondidas };
   }
   const etapa: EtapaDescoberta = { etapa: 0, origem: 'typeform', campos: [] };
@@ -884,12 +1021,16 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
       if (s.saida.status === 'ensaio') return { resultado: { status: 'ensaio', captura: '', pronto: true }, etapas, perguntasRespondidas, typeform };
       // concluído: devolve o controle ao laço principal — espera a confirmação ou a próxima etapa do InHire
       log('info', 'Questionário concluído; de volta ao formulário principal.');
-      const desfecho = await ate(async () => {
-        if (await sucessoNaTela()) return true;
-        if (comprovado()) return true; // questionário terminado + envio aceito pela API = acabou
-        if ((await detectarModo(page)).modo === 'sequencial') return false;
-        return (await descobrirCampos(page)).length > 0 || (await acharBotao(page)) !== null;
-      }, 25000, 500);
+      const desfecho = await ate(
+        async () => {
+          if (await sucessoNaTela()) return true;
+          if (comprovado()) return true; // questionário terminado + envio aceito pela API = acabou
+          if ((await detectarModo(page)).modo === 'sequencial') return false;
+          return (await descobrirCampos(page)).length > 0 || (await acharBotao(page)) !== null;
+        },
+        25000,
+        500,
+      );
       if (desfecho && (comprovado() || (await sucessoNaTela()))) return enviada();
       if (!desfecho && talentoCriado) {
         log('alerta', 'O InHire não mostrou a mensagem de confirmação, mas a candidatura já tinha sido criada antes do questionário.');
@@ -939,7 +1080,10 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
     if (!botao) return saidaErro('não achei o botão para avançar ou enviar nesta etapa');
     if (!(await ate(() => habilitado(botao.loc), 10000))) {
       // Diagnóstico útil: qual campo obrigatório ficou vazio (o InHire raramente diz)
-      const faltando = (await descobrirCampos(page).catch(() => [])).filter(c => c.obrigatorio && !c.preenchido).map(c => c.rotulo || c.nome).filter(Boolean);
+      const faltando = (await descobrirCampos(page).catch(() => []))
+        .filter(c => c.obrigatorio && !c.preenchido)
+        .map(c => c.rotulo || c.nome)
+        .filter(Boolean);
       const erros = await errosVisiveis(page);
       const detalhe = faltando.length ? `falta preencher: ${faltando.slice(0, 6).join(', ')}` : erros.length ? erros.join(' · ') : 'algum campo obrigatório ficou inválido ou vazio';
       return saidaErro(`o InHire não liberou "${botao.texto}": ${detalhe}`);
@@ -961,15 +1105,19 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
       await botao.loc.click();
       // Depois do envio: confirmação, questionário sequencial (iframe/nativo) ou mais campos do InHire
       let desfecho: 'sucesso' | 'sequencial' | 'campos' | null = null;
-      await ate(async () => {
-        if (await sucessoNaTela()) desfecho = 'sucesso';
-        else if ((await detectarModo(page)).modo === 'sequencial') desfecho = 'sequencial';
-        else {
-          const agora = await descobrirCampos(page).catch(() => []);
-          if (agora.length && assinatura(agora) !== antes) desfecho = 'campos';
-        }
-        return desfecho !== null;
-      }, 25000, 500);
+      await ate(
+        async () => {
+          if (await sucessoNaTela()) desfecho = 'sucesso';
+          else if ((await detectarModo(page)).modo === 'sequencial') desfecho = 'sequencial';
+          else {
+            const agora = await descobrirCampos(page).catch(() => []);
+            if (agora.length && assinatura(agora) !== antes) desfecho = 'campos';
+          }
+          return desfecho !== null;
+        },
+        25000,
+        500,
+      );
       if (desfecho === 'sucesso') return enviada();
       if (desfecho === 'sequencial' || desfecho === 'campos') continue; // o topo do laço detecta o modo e segue
       // Nada mudou na tela. Se a API aceitou o envio, acabou bem — o InHire só não trocou a mensagem.

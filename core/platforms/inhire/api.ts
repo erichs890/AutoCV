@@ -20,7 +20,10 @@ export interface ConfigTenant {
 
 /** Configuração pública da empresa; null se o subdomínio não existe (404). */
 export async function configTenant(tenant: string): Promise<ConfigTenant | null> {
-  const r = await fetch(`${BASE}/tenants/public/config/${encodeURIComponent(tenant)}`, { headers: { 'x-inhire-client': 'web-inhire', accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+  const r = await fetch(`${BASE}/tenants/public/config/${encodeURIComponent(tenant)}`, {
+    headers: { 'x-inhire-client': 'web-inhire', accept: 'application/json' },
+    signal: AbortSignal.timeout(15000),
+  });
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`InHire ${r.status} ao consultar ${tenant}`);
   return (await r.json()) as ConfigTenant;
@@ -69,8 +72,15 @@ export function htmlParaTexto(html: string): string {
     .replace(/<\s*(br|\/p|\/h[1-6]|\/li|\/div)\s*>/gi, '\n')
     .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/g, ' ')
-    .replace(/&(aacute|agrave|atilde|acirc|eacute|ecirc|iacute|oacute|otilde|ocirc|uacute|ccedil|ntilde);/g, (_, e: string) => ({ aacute: 'á', agrave: 'à', atilde: 'ã', acirc: 'â', eacute: 'é', ecirc: 'ê', iacute: 'í', oacute: 'ó', otilde: 'õ', ocirc: 'ô', uacute: 'ú', ccedil: 'ç', ntilde: 'ñ' })[e] ?? '')
-    .replace(/&(Aacute|Agrave|Atilde|Acirc|Eacute|Ecirc|Iacute|Oacute|Otilde|Ocirc|Uacute|Ccedil);/g, (_, e: string) => ({ Aacute: 'Á', Agrave: 'À', Atilde: 'Ã', Acirc: 'Â', Eacute: 'É', Ecirc: 'Ê', Iacute: 'Í', Oacute: 'Ó', Otilde: 'Õ', Ocirc: 'Ô', Uacute: 'Ú', Ccedil: 'Ç' })[e] ?? '')
+    .replace(
+      /&(aacute|agrave|atilde|acirc|eacute|ecirc|iacute|oacute|otilde|ocirc|uacute|ccedil|ntilde);/g,
+      (_, e: string) =>
+        ({ aacute: 'á', agrave: 'à', atilde: 'ã', acirc: 'â', eacute: 'é', ecirc: 'ê', iacute: 'í', oacute: 'ó', otilde: 'õ', ocirc: 'ô', uacute: 'ú', ccedil: 'ç', ntilde: 'ñ' })[e] ?? '',
+    )
+    .replace(
+      /&(Aacute|Agrave|Atilde|Acirc|Eacute|Ecirc|Iacute|Oacute|Otilde|Ocirc|Uacute|Ccedil);/g,
+      (_, e: string) => ({ Aacute: 'Á', Agrave: 'À', Atilde: 'Ã', Acirc: 'Â', Eacute: 'É', Ecirc: 'Ê', Iacute: 'Í', Oacute: 'Ó', Otilde: 'Õ', Ocirc: 'Ô', Uacute: 'Ú', Ccedil: 'Ç' })[e] ?? '',
+    )
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")

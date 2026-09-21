@@ -17,17 +17,15 @@ export default function Plataformas() {
   const vagasPorEmpresa = (sub: string) => estado.vagas.filter(v => v.tenant === sub && v.status !== 'encerrada').length;
 
   async function conectar() {
-    await salvar({
-      conexoes: { ...estado.conexoes, inhire: { conectadaEm: conexaoInhire?.conectadaEm ?? new Date().toISOString() } },
-      automacao: { ...estado.automacao, plataformas: Array.from(new Set([...estado.automacao.plataformas, 'inhire'])) },
-    });
+    // `conexoes` é a única fonte de verdade de plataforma ligada (o core lê dela; `automacao.plataformas` era um espelho que podia divergir)
+    await salvar({ conexoes: { ...estado.conexoes, inhire: { conectadaEm: conexaoInhire?.conectadaEm ?? new Date().toISOString() } } });
     const { total } = await post<{ total: number }>('/empresas/seed');
     registrar('sucesso', `InHire conectado: ${total} empresa(s) monitoradas.`);
   }
 
   async function desconectar() {
     const { inhire: _fora, ...resto } = estado.conexoes;
-    await salvar({ conexoes: resto, automacao: { ...estado.automacao, plataformas: estado.automacao.plataformas.filter(p => p !== 'inhire') } });
+    await salvar({ conexoes: resto });
     registrar('alerta', 'InHire desconectado (a lista de empresas foi mantida).');
   }
 
@@ -66,7 +64,9 @@ export default function Plataformas() {
                 </span>
                 <div className="flex flex-col items-start gap-1">
                   <h3 className="text-[15px] font-bold">{p.nome}</h3>
-                  <span className={`inline-flex items-center gap-[5px] rounded-[9px] px-2 py-0.5 text-[10px] font-bold ${conexao ? 'bg-green-deep text-white' : 'border border-panel-border bg-page-bg text-ink'}`}>
+                  <span
+                    className={`inline-flex items-center gap-[5px] rounded-[9px] px-2 py-0.5 text-[10px] font-bold ${conexao ? 'bg-green-deep text-white' : 'border border-panel-border bg-page-bg text-ink'}`}
+                  >
                     <span aria-hidden className="size-1.5 rounded-full bg-current" />
                     {conexao ? 'Conectado' : p.disponivel ? 'Não conectado' : 'Indisponível'}
                   </span>
@@ -77,8 +77,14 @@ export default function Plataformas() {
                   ? conexao
                     ? `${ativas.length} empresa(s) monitoradas · ${vagasAtivas} vagas ativas`
                     : 'Páginas de vagas públicas, sem login. O robô descobre as empresas que usam InHire e acompanha as vagas delas.'
-                  : 'Integração ainda não implementada.'}
+                  : (p.nota ?? 'Integração ainda não implementada.')}
               </p>
+              {!p.disponivel && p.site && (
+                <a href={p.site} target="_blank" rel="noreferrer" className="text-xs font-bold text-blue-deep underline underline-offset-2">
+                  Abrir o site
+                  <span className="sr-only"> de {p.nome}</span>
+                </a>
+              )}
               <div className="mt-auto">
                 {p.id === 'inhire' && conexao ? (
                   <button type="button" className="btn btn-secondary btn-sm w-full" onClick={desconectar}>
@@ -107,9 +113,9 @@ export default function Plataformas() {
           bodyClassName="flex flex-col gap-3 p-3.5"
         >
           <p className="text-xs text-ink-soft">
-            O InHire não tem busca geral: cada empresa publica em <code className="font-mono">empresa.inhire.app/vagas</code>. O robô descobre as empresas sozinho — começa com uma lista inicial verificada e,
-            uma vez por dia, procura novas em índices públicos da web e confirma cada uma na API do InHire. Depois revisita todas a cada {estado.descoberta.intervaloHoras} h. Se souber de alguma que
-            ele ainda não achou, cole o endereço.
+            O InHire não tem busca geral: cada empresa publica em <code className="font-mono">empresa.inhire.app/vagas</code>. O robô descobre as empresas sozinho — começa com uma lista inicial
+            verificada e, uma vez por dia, procura novas em índices públicos da web e confirma cada uma na API do InHire. Depois revisita todas a cada {estado.descoberta.intervaloHoras} h. Se souber
+            de alguma que ele ainda não achou, cole o endereço.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <form onSubmit={adicionar} className="flex min-w-[320px] flex-1 gap-2">
@@ -136,7 +142,13 @@ export default function Plataformas() {
                   <p className="font-bold">
                     Varrendo {estado.descoberta.progresso.atual} de {estado.descoberta.progresso.total}: {estado.descoberta.progresso.empresa}
                   </p>
-                  <div role="progressbar" aria-valuemin={0} aria-valuemax={estado.descoberta.progresso.total} aria-valuenow={estado.descoberta.progresso.atual} className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-amber/40">
+                  <div
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={estado.descoberta.progresso.total}
+                    aria-valuenow={estado.descoberta.progresso.atual}
+                    className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-amber/40"
+                  >
                     <div className="h-full bg-amber-ink" style={{ width: `${(estado.descoberta.progresso.atual / estado.descoberta.progresso.total) * 100}%` }} />
                   </div>
                   <p className="mt-1">Cada vaga nova é lida uma vez; as próximas varreduras são rápidas. As vagas já aparecem em Automação conforme chegam.</p>
@@ -156,12 +168,24 @@ export default function Plataformas() {
               <table className="w-full min-w-[720px] border-collapse text-left text-xs">
                 <thead className="text-[11px]">
                   <tr className="h-[30px] border-b border-panel-border">
-                    <th scope="col" className="px-2 font-bold">Empresa</th>
-                    <th scope="col" className="font-bold">Subdomínio</th>
-                    <th scope="col" className="w-[110px] font-bold">Vagas ativas</th>
-                    <th scope="col" className="w-[130px] font-bold">Última verificação</th>
-                    <th scope="col" className="w-[90px] font-bold">Origem</th>
-                    <th scope="col" className="w-[170px] pr-2 text-right font-bold">Ações</th>
+                    <th scope="col" className="px-2 font-bold">
+                      Empresa
+                    </th>
+                    <th scope="col" className="font-bold">
+                      Subdomínio
+                    </th>
+                    <th scope="col" className="w-[110px] font-bold">
+                      Vagas ativas
+                    </th>
+                    <th scope="col" className="w-[130px] font-bold">
+                      Última verificação
+                    </th>
+                    <th scope="col" className="w-[90px] font-bold">
+                      Origem
+                    </th>
+                    <th scope="col" className="w-[170px] pr-2 text-right font-bold">
+                      Ações
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -186,7 +210,12 @@ export default function Plataformas() {
                         <button type="button" className="btn btn-secondary btn-sm mr-1.5" onClick={() => post('/empresas/ativar', { subdominio: e.subdominio, ativo: !e.ativo })}>
                           {e.ativo ? 'Pausar' : 'Reativar'}
                         </button>
-                        <button type="button" aria-label={`Remover ${e.nome || e.subdominio}`} className="btn btn-secondary btn-sm px-2 text-orange-deep" onClick={() => api(`/empresas?subdominio=${encodeURIComponent(e.subdominio)}`, { method: 'DELETE' })}>
+                        <button
+                          type="button"
+                          aria-label={`Remover ${e.nome || e.subdominio}`}
+                          className="btn btn-secondary btn-sm px-2 text-orange-deep"
+                          onClick={() => api(`/empresas?subdominio=${encodeURIComponent(e.subdominio)}`, { method: 'DELETE' })}
+                        >
                           <Trash2 size={13} aria-hidden />
                         </button>
                       </td>

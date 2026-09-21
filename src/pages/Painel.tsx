@@ -105,11 +105,21 @@ export default function Painel() {
               <table className="w-full min-w-[860px] border-collapse text-left text-xs">
                 <thead className="text-[11px]">
                   <tr className="h-[30px] border-b border-panel-border">
-                    <th scope="col" className="px-3.5 font-bold">Vaga</th>
-                    <th scope="col" className="w-[200px] font-bold">Empresa</th>
-                    <th scope="col" className="w-[190px] font-bold">Plataforma</th>
-                    <th scope="col" className="w-[150px] font-bold">Data / Hora</th>
-                    <th scope="col" className="w-[144px] pr-3.5 font-bold">Status</th>
+                    <th scope="col" className="px-3.5 font-bold">
+                      Vaga
+                    </th>
+                    <th scope="col" className="w-[200px] font-bold">
+                      Empresa
+                    </th>
+                    <th scope="col" className="w-[190px] font-bold">
+                      Plataforma
+                    </th>
+                    <th scope="col" className="w-[150px] font-bold">
+                      Data / Hora
+                    </th>
+                    <th scope="col" className="w-[144px] pr-3.5 font-bold">
+                      Status
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -163,11 +173,24 @@ export default function Painel() {
                   «
                 </button>
                 {Array.from({ length: paginas }, (_, i) => i + 1).map(p => (
-                  <button key={p} type="button" aria-label={`Página ${p}`} aria-current={p === pagina ? 'page' : undefined} onClick={() => irPara(p)} className={`${pg} ${p === pagina ? 'border-blue-dark bg-blue-dark text-white' : 'border-panel-border bg-panel hover:bg-page-bg'}`}>
+                  <button
+                    key={p}
+                    type="button"
+                    aria-label={`Página ${p}`}
+                    aria-current={p === pagina ? 'page' : undefined}
+                    onClick={() => irPara(p)}
+                    className={`${pg} ${p === pagina ? 'border-blue-dark bg-blue-dark text-white' : 'border-panel-border bg-panel hover:bg-page-bg'}`}
+                  >
                     {p}
                   </button>
                 ))}
-                <button type="button" aria-label="Próxima página" aria-disabled={pagina === paginas} onClick={() => irPara(pagina + 1)} className={`${pg} border-panel-border bg-panel hover:bg-page-bg`}>
+                <button
+                  type="button"
+                  aria-label="Próxima página"
+                  aria-disabled={pagina === paginas}
+                  onClick={() => irPara(pagina + 1)}
+                  className={`${pg} border-panel-border bg-panel hover:bg-page-bg`}
+                >
                   »
                 </button>
               </nav>

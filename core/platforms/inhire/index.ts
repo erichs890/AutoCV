@@ -13,7 +13,20 @@ import { ROTAS_ENVIO } from './selectors.ts';
 export { pretensaoEmReais } from './formulario.ts';
 
 // A busca é o módulo de descoberta (discovery.ts): lista de empresas + API pública. Aqui só a candidatura.
-const buscarVagas = (perfil: PerfilBusca, cfg: ConfigAutomacao, log: Log): Promise<Vaga[]> => varrer(perfil, { area: cfg.area, cargo: cfg.cargo, senioridade: cfg.senioridade, local: ler.perfil()?.cidade, scoreMinimo: cfg.scoreMinimo }, log);
+const buscarVagas = (perfil: PerfilBusca, cfg: ConfigAutomacao, log: Log): Promise<Vaga[]> =>
+  varrer(
+    perfil,
+    {
+      area: cfg.area,
+      cargo: ler.perfil()?.cargo ?? '',
+      senioridade: cfg.senioridade,
+      local: ler.perfil()?.cidade,
+      scoreMinimo: cfg.scoreMinimo,
+      cargoRigido: cfg.cargoRigido,
+      presencialSoNaMinhaCidade: cfg.presencialSoNaMinhaCidade,
+    },
+    log,
+  );
 
 const jobIdDe = (vaga: Vaga) => vaga.id.replace(/^inhire:[^:]+:/, '');
 
@@ -85,10 +98,17 @@ async function candidatar(vaga: Vaga, dados: DadosCandidatura, log: Log): Promis
       incomum: r.etapas.length > 3 || r.etapas.some(e => e.campos.some(c => c.tipo === 'desconhecido')),
     };
     formularios.salvar(vaga.id, { etapas: r.etapas, resumo, em: new Date().toISOString() });
-    log('info', `Estrutura do formulário: ${resumo.etapas} etapa(s), ${resumo.campos} campo(s)${resumo.typeform ? ', com Typeform' : ''}${resumo.incomum ? ' — estrutura incomum, vale conferir a captura' : ''}.`);
+    log(
+      'info',
+      `Estrutura do formulário: ${resumo.etapas} etapa(s), ${resumo.campos} campo(s)${resumo.typeform ? ', com Typeform' : ''}${resumo.incomum ? ' — estrutura incomum, vale conferir a captura' : ''}.`,
+    );
 
     if (r.resultado.status === 'ensaio') {
-      const valores = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll<HTMLInputElement>('input[name]')].filter(i => i.type !== 'file' && i.type !== 'radio' && i.type !== 'checkbox' && i.value).map(i => [i.name, i.value])));
+      const valores = await page.evaluate(() =>
+        Object.fromEntries(
+          [...document.querySelectorAll<HTMLInputElement>('input[name]')].filter(i => i.type !== 'file' && i.type !== 'radio' && i.type !== 'checkbox' && i.value).map(i => [i.name, i.value]),
+        ),
+      );
       log('info', `Valores no formulário: ${JSON.stringify(valores).slice(0, 400)}`);
       return { ...r.resultado, captura: await captura('ensaio'), formulario: resumo };
     }
@@ -103,7 +123,16 @@ async function candidatar(vaga: Vaga, dados: DadosCandidatura, log: Log): Promis
     }
     const motivo = recusaDoServidor || (e as Error).message.split('\n')[0];
     const ultima = etapas.at(-1);
-    return { status: 'erro', motivo: ultima ? `${motivo} (etapa ${ultima.etapa}: ${ultima.campos.map(c => c.rotulo || c.nome).slice(0, 6).join(', ')})` : motivo, captura: await captura('erro') };
+    return {
+      status: 'erro',
+      motivo: ultima
+        ? `${motivo} (etapa ${ultima.etapa}: ${ultima.campos
+            .map(c => c.rotulo || c.nome)
+            .slice(0, 6)
+            .join(', ')})`
+        : motivo,
+      captura: await captura('erro'),
+    };
   } finally {
     await page.close().catch(() => {});
   }

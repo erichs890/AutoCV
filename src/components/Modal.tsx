@@ -24,6 +24,7 @@ export default function Modal({ aberto, onFechar, titulo, icon: Icon, rodape, la
   }, [aberto]);
 
   return createPortal(
+    // biome-ignore lint/a11y/useKeyWithClickEvents: o <dialog> nativo fecha no Esc por onClose; este clique so trata o fundo, e o botao Fechar cobre o teclado
     <dialog
       ref={ref}
       aria-labelledby={id}
@@ -37,7 +38,12 @@ export default function Modal({ aberto, onFechar, titulo, icon: Icon, rodape, la
         <h2 id={id} className="truncate text-sm font-bold">
           {titulo}
         </h2>
-        <button type="button" onClick={onFechar} aria-label="Fechar" className="ml-auto flex size-6 shrink-0 items-center justify-center rounded border border-white/40 hover:bg-white/15 active:bg-white/25">
+        <button
+          type="button"
+          onClick={onFechar}
+          aria-label="Fechar"
+          className="ml-auto flex size-6 shrink-0 items-center justify-center rounded border border-white/40 hover:bg-white/15 active:bg-white/25"
+        >
           <X size={14} aria-hidden />
         </button>
       </header>

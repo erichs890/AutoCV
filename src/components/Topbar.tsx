@@ -27,10 +27,7 @@ export default function Topbar({ titulo, onAbrirMenu }: Props) {
 
       <div className="flex-1" />
 
-      <Link
-        to="/configuracoes"
-        className="flex items-center gap-2 rounded-lg border border-panel-border px-2 py-1 hover:bg-page-bg max-md:border-0 max-md:p-0"
-      >
+      <Link to="/configuracoes" className="flex items-center gap-2 rounded-lg border border-panel-border px-2 py-1 hover:bg-page-bg max-md:border-0 max-md:p-0">
         <span aria-hidden className="flex size-[30px] items-center justify-center rounded-full bg-purple text-xs font-bold text-white">
           {iniciais(nome)}
         </span>

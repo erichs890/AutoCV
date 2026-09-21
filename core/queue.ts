@@ -3,13 +3,15 @@ import { adapters, PERGUNTA_CIDADE, PERGUNTA_CPF } from './platforms/adapter.ts'
 import { candidaturas, kv, log, vagas } from './storage/db.ts';
 import { ler } from './estado.ts';
 import { emitir } from './events.ts';
-import { executarCandidatura, PERGUNTA_LINKEDIN, PERGUNTA_PRETENSAO, PERGUNTA_REGIME } from './candidatura.ts';
-import { avaliarVagas, iaAtiva, lerIA } from './ia.ts';
+import { chaveDaVaga, executarCandidatura, jaCandidatado, jaEnviada, PERGUNTA_LINKEDIN, PERGUNTA_PRETENSAO, PERGUNTA_REGIME } from './candidatura.ts';
+import { avaliarVagas, iaAtiva, lerIA, responderPergunta } from './ia.ts';
 import { descobrirEmpresas, lerDescoberta } from './platforms/inhire/discovery.ts';
 import { empresas } from './storage/db.ts';
 import { calcularScore } from './resume/score.ts';
 import { inferirSenioridade } from './resume/analyzer.ts';
 import { esperaDaTentativa, falhaRepetivel, MAX_TENTATIVAS } from './falhas.ts';
+import { categoriaSensivel } from '../src/sensiveis.ts';
+import { perguntaSoDestaVaga } from '../src/dados.ts';
 
 const registrar = log.registrar;
 let ocupado = false; // uma candidatura por vez, sempre
@@ -19,6 +21,9 @@ function dentroDaJanela(janela: string) {
   const agora = new Date().toTimeString().slice(0, 5);
   return agora >= ini && agora <= fim;
 }
+
+/** "10 s", "1 min", "3 min": o intervalo virou segundos e as mensagens precisam acompanhar. */
+export const textoIntervalo = (s: number) => (s < 60 ? `${s} s` : s % 60 === 0 ? `${s / 60} min` : `${Math.floor(s / 60)} min ${s % 60} s`);
 
 function enviosHoje() {
   const hoje = new Date().toDateString();
@@ -30,16 +35,88 @@ export function repontuar(): number {
   const cfg = ler.automacao();
   const perfil = ler.curriculos()[0]?.perfilBusca;
   if (!perfil) return 0;
+  const filtros = {
+    area: cfg.area,
+    cargo: ler.perfil()?.cargo ?? '', // o cargo desejado mora no perfil: um campo, um dono
+    senioridade: cfg.senioridade,
+    local: ler.perfil()?.cidade,
+    cargoRigido: cfg.cargoRigido,
+    presencialSoNaMinhaCidade: cfg.presencialSoNaMinhaCidade,
+  };
   const abertas = vagas.listar().filter(v => v.status === 'encontrada' || v.status === 'ignorada');
   for (const v of abertas) {
-    const a = calcularScore(v, perfil, { area: cfg.area, cargo: cfg.cargo, senioridade: cfg.senioridade, local: ler.perfil()?.cidade });
+    const a = calcularScore(v, perfil, filtros);
     vagas.atualizar(v.id, { score: a.score, motivo: a.motivo, senioridade: v.senioridade ?? inferirSenioridade(v.titulo, v.descricao), status: a.score < cfg.scoreMinimo ? 'ignorada' : 'encontrada' });
   }
+
+  // Fila, ensaio e erro também precisam da nota nova: uma vaga enfileirada com o score antigo continuaria
+  // sendo candidatada depois de o critério mudar, e uma já processada exibiria uma compatibilidade que não
+  // existe mais. Status preservado; só sai da fila quem ficou abaixo do mínimo.
+  const REPONTUAR_TAMBEM: Vaga['status'][] = [...NA_FILA, 'ensaio', 'erro'];
+  let removidas = 0;
+  for (const v of vagas.listar().filter(x => REPONTUAR_TAMBEM.includes(x.status))) {
+    const a = calcularScore(v, perfil, filtros);
+    if (a.score < cfg.scoreMinimo && v.status === 'na_fila') {
+      vagas.atualizar(v.id, { score: a.score, motivo: a.motivo, status: 'ignorada', posicao: undefined, pendencia: undefined });
+      removidas++;
+    } else {
+      vagas.atualizar(v.id, { score: a.score, motivo: a.motivo });
+    }
+  }
+  if (removidas) registrar('alerta', `${removidas} vaga(s) saíram da fila por ficarem abaixo de ${cfg.scoreMinimo}% com o critério atual.`);
   if (abertas.length) {
-    registrar('info', `${abertas.length} vaga(s) repontuadas com senioridade ${cfg.senioridade || perfil.senioridade}${cfg.area ? `, área ${cfg.area}` : ''}${cfg.cargo ? `, cargo "${cfg.cargo}"` : ''}.`);
+    registrar(
+      'info',
+      `${abertas.length} vaga(s) repontuadas com senioridade ${cfg.senioridade || perfil.senioridade}${cfg.area ? `, área ${cfg.area}` : ''}${ler.perfil()?.cargo ? `, cargo "${ler.perfil()?.cargo}"` : ''}.`,
+    );
     emitir({ tipo: 'estado' });
   }
   return abertas.length;
+}
+
+/**
+ * Manda a IA reavaliar as vagas JÁ gravadas, das mais compatíveis (pelo score léxico) para baixo.
+ *
+ * O score léxico é um filtro grosseiro: ele conta palavras, não entende a função. Quem separa
+ * "Analista de Processos" de "Engenheiro de Software" com confiança é o modelo lendo o currículo e a vaga.
+ * Até aqui a IA só pontuava vaga recém-descoberta, e uma falha de cota na varredura deixava tudo no léxico
+ * para sempre, sem como refazer. `limite` existe porque avaliar milhares de vagas queima qualquer cota.
+ */
+export async function repontuarComIA(limite = 50): Promise<number> {
+  const principal = ler.curriculos()[0];
+  if (!principal?.markdown) throw new Error('envie um currículo em PDF antes de avaliar por IA');
+  if (!iaAtiva()) throw new Error('configure o provedor e a chave em Configurações › Inteligência Artificial');
+
+  const cfg = ler.automacao();
+  const alvo = vagas
+    .listar()
+    .filter(v => v.status === 'encontrada' || v.status === 'ignorada')
+    .sort((a, b) => b.score - a.score)
+    .slice(0, Math.max(1, limite));
+  if (!alvo.length) return 0;
+
+  const nome = lerIA().provedor === 'gemini' ? 'Gemini' : 'Claude';
+  registrar('info', `${nome} vai reavaliar ${alvo.length} vaga(s) contra o seu currículo. Isso leva alguns minutos.`);
+  const notas = await avaliarVagas(principal.markdown, alvo, cfg.senioridade || principal.perfilBusca?.senioridade || '', {
+    aoProgredir: (feitas, total) => {
+      if (feitas % 30 === 0 || feitas === total) registrar('info', `${nome}: ${feitas} de ${total} vaga(s) avaliadas.`);
+    },
+    aoPausar: (motivo, avaliadas) => registrar('alerta', `A cota do ${nome} acabou depois de ${avaliadas} vaga(s) (${motivo.slice(0, 90)}). As demais ficam com o score por competências.`),
+  });
+
+  let subiram = 0;
+  let cairam = 0;
+  for (const v of alvo) {
+    const n = notas.get(v.id);
+    if (!n) continue;
+    if (n.score > v.score) subiram++;
+    if (n.score < v.score) cairam++;
+    vagas.atualizar(v.id, { score: n.score, motivo: `${nome}: ${n.motivo}`, status: n.score < cfg.scoreMinimo ? 'ignorada' : 'encontrada' });
+  }
+  registrar('sucesso', `${nome} reavaliou ${notas.size} vaga(s): ${subiram} subiram, ${cairam} caíram. A fila passa a usar essas notas.`);
+  emitir({ tipo: 'estado' });
+  enfileirarCompativeis('reavaliação por IA');
+  return notas.size;
 }
 
 /**
@@ -77,20 +154,85 @@ export async function buscarVagas(): Promise<number> {
     }
   }
 
-  if (ler.robo() === 'ativo' && cfg.modo === 'automatico') {
-    let enfileiradas = 0;
-    for (const v of novas) {
-      const atual = vagas.get(v.id);
-      if (!atual || atual.status !== 'encontrada') continue;
-      if (!cfg.regimes.includes(atual.modelo === 'indefinido' ? cfg.regimes[0] : atual.modelo)) continue;
-      vagas.atualizar(v.id, { status: 'na_fila', posicao: vagas.proximaPosicao() });
-      enfileiradas++;
-    }
-    if (enfileiradas) registrar('info', `${enfileiradas} vaga(s) compatível(is) entraram na fila.`);
-  }
+  enfileirarCompativeis('varredura');
   kv.set('ultimaBusca', new Date().toISOString());
   emitir({ tipo: 'estado' });
   return novas.length;
+}
+
+// Status que já ocupam uma vaga de trabalho do robô (não podem ser enfileirados de novo nem contar duas vezes)
+const NA_FILA: Vaga['status'][] = ['na_fila', 'em_andamento', 'aguardando_pergunta', 'aguardando_aprovacao'];
+
+/** A vaga cabe no filtro de modelo de trabalho do usuário? Modelo indefinido passa (o robô descobre na página). */
+const modeloAceito = (v: Vaga, cfg: ReturnType<typeof ler.automacao>) => v.modelo === 'indefinido' || cfg.regimes.includes(v.modelo);
+
+/**
+ * Põe na fila as vagas JÁ ENCONTRADAS que passam nos filtros atuais, da mais compatível para a menos.
+ *
+ * Antes, só vaga recém-descoberta entrava na fila: ligar o modo automático com 178 vagas encontradas não fazia
+ * nada, porque a fila nascia vazia e só uma varredura futura a alimentaria. Agora "ligar o robô" significa algo.
+ *
+ * Enfileira no máximo o que ainda cabe no limite diário (descontando o que já foi enviado hoje e o que já está
+ * na fila): a fila fica legível, o limite é respeitado na origem, e amanhã o restante entra sozinho.
+ */
+/**
+ * Tira da fila as publicações repetidas da mesma vaga (empresa + título), deixando só a mais compatível.
+ * Existe porque a fila já podia estar montada antes desta regra — e porque uma varredura nova pode trazer
+ * a publicação irmã depois de a primeira já estar enfileirada.
+ */
+export function limparDuplicatasDaFila(): number {
+  const naFila = vagas
+    .listar()
+    .filter(v => NA_FILA.includes(v.status))
+    .sort((a, b) => b.score - a.score);
+  const vistas = new Set<string>();
+  let removidas = 0;
+  for (const v of naFila) {
+    const chave = chaveDaVaga(v);
+    if (!vistas.has(chave)) {
+      vistas.add(chave);
+      continue;
+    }
+    vagas.atualizar(v.id, { status: 'encontrada', posicao: undefined, pendencia: undefined });
+    removidas++;
+  }
+  if (removidas) registrar('alerta', `${removidas} publicação(ões) repetida(s) da mesma vaga saíram da fila — só a mais compatível de cada uma fica.`);
+  return removidas;
+}
+
+export function enfileirarCompativeis(motivo: string): number {
+  const cfg = ler.automacao();
+  if (ler.robo() !== 'ativo' || cfg.modo !== 'automatico') return 0;
+
+  limparDuplicatasDaFila();
+  const todas = vagas.listar();
+  const naFila = todas.filter(v => NA_FILA.includes(v.status));
+  const restantes = cfg.limiteDiario - enviosHoje() - naFila.length;
+  // Uma publicação por empresa+título: o InHire repete a mesma vaga com outro id, e três currículos iguais
+  // chegando ao mesmo recrutador é pior do que não se candidatar
+  const jaVistas = new Set(naFila.map(chaveDaVaga));
+  const candidatas = todas
+    .filter(v => v.status === 'encontrada' && v.score >= cfg.scoreMinimo && modeloAceito(v, cfg) && !jaCandidatado(v))
+    .sort((a, b) => b.score - a.score)
+    .filter(v => {
+      const chave = chaveDaVaga(v);
+      if (jaVistas.has(chave)) return false; // fica de reserva: se a escolhida falhar, ela ainda está "encontrada"
+      jaVistas.add(chave);
+      return true;
+    });
+
+  if (!candidatas.length) return 0;
+  if (restantes <= 0) {
+    registrar('info', `${candidatas.length} vaga(s) compatível(is) aguardando: o limite de ${cfg.limiteDiario} por dia já está tomado (${enviosHoje()} enviada(s), ${naFila.length} na fila).`);
+    return 0;
+  }
+
+  const escolhidas = candidatas.slice(0, restantes);
+  for (const v of escolhidas) vagas.atualizar(v.id, { status: 'na_fila', posicao: vagas.proximaPosicao() });
+  const sobra = candidatas.length - escolhidas.length;
+  registrar('info', `${escolhidas.length} vaga(s) compatível(is) entraram na fila (${motivo})${sobra ? `; outras ${sobra} ficam para quando abrir espaço no limite diário` : ''}.`);
+  emitir({ tipo: 'estado' });
+  return escolhidas.length;
 }
 
 /** Fonte B sob demanda ou agendada (1x/dia): acha empresas novas no InHire pela API de busca. */
@@ -104,6 +246,8 @@ export async function buscarEmpresas(): Promise<number> {
 export function candidatarAgora(id: string) {
   const v = vagas.get(id);
   if (!v) throw new Error('vaga não encontrada');
+  if (jaEnviada(id)) throw new Error('você já se candidatou a esta vaga');
+  if (jaCandidatado(v)) throw new Error(`você já se candidatou a "${v.titulo}" em ${v.empresa} (outra publicação da mesma vaga)`);
   vagas.atualizar(id, { status: 'na_fila', posicao: vagas.proximaPosicao(), pendencia: undefined, erro: undefined, tentativas: undefined, proximaTentativaEm: undefined });
   registrar('info', `"${v.titulo}" entrou na fila.`);
   emitir({ tipo: 'estado' });
@@ -118,7 +262,7 @@ export function removerDaFila(id: string) {
 /** Resposta do usuário a uma pergunta pendente; opcionalmente salva para perguntas parecidas. */
 export function responder(id: string, resposta: string, salvar: boolean) {
   const v = vagas.get(id);
-  if (!v || v.pendencia?.tipo !== 'pergunta') throw new Error('nada pendente nesta vaga');
+  if (v?.pendencia?.tipo !== 'pergunta') throw new Error('nada pendente nesta vaga');
   const rotulo = v.pendencia.pergunta.rotulo;
   const perfil = ler.perfil();
   if (rotulo === PERGUNTA_LINKEDIN && perfil) {
@@ -154,7 +298,7 @@ export function responder(id: string, resposta: string, salvar: boolean) {
 /** Decisão do preview: usar o adaptado, o original, ou desistir desta vaga. */
 export function decidirPreview(id: string, decisao: 'adaptado' | 'original' | 'cancelar') {
   const v = vagas.get(id);
-  if (!v || v.pendencia?.tipo !== 'aprovacao') throw new Error('nada para aprovar nesta vaga');
+  if (v?.pendencia?.tipo !== 'aprovacao') throw new Error('nada para aprovar nesta vaga');
   if (decisao === 'cancelar') {
     vagas.atualizar(id, { status: 'encontrada', pendencia: undefined, posicao: undefined });
     registrar('alerta', `Candidatura a "${v.titulo}" cancelada por você.`);
@@ -187,8 +331,60 @@ function motivoDeEspera(cfg: ReturnType<typeof ler.automacao>): string | null {
   if (!dentroDaJanela(cfg.janela)) return `estamos fora da janela de envio (${cfg.janela})`;
   if (enviosHoje() >= cfg.limiteDiario) return `o limite diário de ${cfg.limiteDiario} envio(s) foi atingido`;
   const prox = ler.proximoEnvioEm();
-  if (prox && new Date(prox) > new Date()) return `o próximo envio está agendado para ${new Date(prox).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} (intervalo de ${cfg.intervalo} min)`;
+  if (prox && new Date(prox) > new Date()) return `o próximo envio está agendado para ${new Date(prox).toLocaleTimeString('pt-BR')} (intervalo de ${textoIntervalo(cfg.intervaloSegundos)})`;
   return null;
+}
+
+// Quantas perguntas a IA já respondeu nesta vaga (modo Sem Piedade). Teto por vaga: formulário que não para de
+// perguntar é sinal de que algo fugiu do previsto, e reabrir a página sem fim não ajuda ninguém.
+const respostasIA = new Map<string, number>();
+const MAX_RESPOSTAS_IA = 8;
+
+/**
+ * Modo Sem Piedade: em vez de pausar numa pergunta nova, a IA responde e a vaga volta para a fila.
+ *
+ * Autodeclaração fica DE FORA por decisão de projeto: gênero, cor/raça, deficiência, religião e saúde nunca
+ * são deduzidos do currículo, nem pela IA. Essas seguem a política de Configurações › Autodeclaração.
+ * Resposta longa, com cheiro de IA, ou opção que não existe na vaga é recusada e a vaga pausa como antes.
+ */
+async function responderComIA(vaga: Vaga): Promise<boolean> {
+  if (vaga.pendencia?.tipo !== 'pergunta') return false;
+  const q = vaga.pendencia.pergunta;
+  const sensivel = categoriaSensivel(q.rotulo);
+  if (sensivel) {
+    registrar('aguardo', `"${vaga.titulo}": ${sensivel.rotulo.toLowerCase()} é autodeclaração — a IA não responde isso. Defina em Configurações › Autodeclaração ou responda aqui.`);
+    return false;
+  }
+  const usadas = respostasIA.get(vaga.id) ?? 0;
+  if (usadas >= MAX_RESPOSTAS_IA) {
+    registrar('alerta', `"${vaga.titulo}" já teve ${usadas} perguntas respondidas pela IA; parei para você conferir.`);
+    return false;
+  }
+  const curriculo = ler.curriculos()[0]?.markdown;
+  if (!curriculo || !iaAtiva()) return false;
+
+  try {
+    const resposta = await responderPergunta(curriculo, vaga, { rotulo: q.rotulo, tipo: q.tipo, opcoes: q.opcoes });
+    if (!resposta) {
+      registrar('aguardo', `A IA não deu uma resposta confiável para "${q.rotulo.slice(0, 60)}"; ficou para você.`);
+      return false;
+    }
+    respostasIA.set(vaga.id, usadas + 1);
+    // Pergunta sobre a própria empresa não vira resposta padrão: vale só para esta tentativa
+    const soDaqui = perguntaSoDestaVaga(q.rotulo, vaga.empresa);
+    const perguntas = ler.perguntas();
+    const existente = perguntas.find(p => p.pergunta === q.rotulo);
+    if (existente) existente.resposta = resposta;
+    else perguntas.push({ id: Date.now(), icone: '', pergunta: q.rotulo, resposta, personalizada: true });
+    kv.set('perguntas', perguntas);
+    vagas.atualizar(vaga.id, { status: 'na_fila', pendencia: undefined, proximaTentativaEm: undefined, respostaTemporaria: soDaqui ? q.rotulo : undefined });
+    registrar('info', `IA respondeu "${q.rotulo.slice(0, 55)}": ${resposta.slice(0, 70)}${soDaqui ? ' (só para esta vaga)' : ''}`);
+    emitir({ tipo: 'estado' });
+    return true;
+  } catch (e) {
+    registrar('alerta', `A IA falhou ao responder "${q.rotulo.slice(0, 50)}" (${(e as Error).message.slice(0, 70)}); a vaga ficou aguardando você.`);
+    return false;
+  }
 }
 
 let ultimaEspera = '';
@@ -202,12 +398,20 @@ async function processarUma(proxima: Vaga): Promise<boolean> {
     await executarCandidatura(proxima.id);
     const depois = vagas.get(proxima.id);
     if (depois?.respostaTemporaria && depois.status !== 'aguardando_pergunta') {
-      kv.set('perguntas', ler.perguntas().filter(p => p.pergunta !== depois.respostaTemporaria));
+      kv.set(
+        'perguntas',
+        ler.perguntas().filter(p => p.pergunta !== depois.respostaTemporaria),
+      );
       vagas.atualizar(proxima.id, { respostaTemporaria: undefined });
     }
     if (depois?.status === 'erro' && depois.erro) tratarFalha(depois, depois.erro);
     // Enviada ou em ensaio: a contagem de tentativas desta vaga não interessa mais
-    if (depois?.status === 'enviada' || depois?.status === 'ensaio') vagas.atualizar(proxima.id, { tentativas: undefined, proximaTentativaEm: undefined, erro: undefined });
+    if (depois?.status === 'enviada' || depois?.status === 'ensaio') {
+      vagas.atualizar(proxima.id, { tentativas: undefined, proximaTentativaEm: undefined, erro: undefined });
+      respostasIA.delete(proxima.id);
+    }
+    // Sem Piedade: a pergunta nova não para a fila — a IA responde e a vaga volta para o início do fluxo
+    if (depois?.status === 'aguardando_pergunta' && ler.automacao().modoPerguntas === 'sem_piedade') await responderComIA(depois);
     // Pendência (pergunta/aprovação) não bloqueia a fila: seguimos para a próxima vaga na mesma rodada
     return true;
   } catch (e) {
@@ -225,7 +429,7 @@ async function processarUma(proxima: Vaga): Promise<boolean> {
  *
  * `forcar` = pedido manual do usuário: roda a próxima da fila ignorando os portões de agendamento.
  */
-async function processarProxima(forcar = false) {
+export async function processarProxima(forcar = false) {
   // `ocupado` é a candidatura em si; `rodando` é o trabalhador — sem ele, o laço de 20 s entraria entre duas
   // candidaturas do mesmo trabalhador (quando `ocupado` já voltou a false) e abriria uma segunda fila em paralelo.
   if (rodando || ocupado) {
@@ -296,7 +500,11 @@ export function iniciarLaco() {
         agendando = false;
       }
     }
-    if (ler.robo() === 'ativo') await processarProxima();
+    if (ler.robo() !== 'ativo') return;
+    // Fila vazia: repõe com as compatíveis que ainda cabem no limite (é assim que o dia seguinte recomeça sozinho).
+    // A checagem é barata — só a consulta da próxima da fila; o levantamento completo só roda quando ela não acha nada.
+    if (!vagas.proximaNaFila()) enfileirarCompativeis('reposição da fila');
+    await processarProxima();
   }, 20000);
 }
 
@@ -305,11 +513,14 @@ export function ligarRobo(ligar: boolean) {
   const cfg = ler.automacao();
   registrar(ligar ? 'sucesso' : 'alerta', ligar ? `Robô ligado em modo ${cfg.modo === 'automatico' ? 'automático' : 'manual'}.` : 'Robô pausado.');
   // Avisos que explicam "liguei o robô e nada acontece" antes de o usuário ficar esperando
-  if (ligar && cfg.ensaio) registrar('alerta', 'Atenção: o modo ensaio está LIGADO. O robô preenche o formulário inteiro mas NÃO envia nada. Desligue o ensaio em Automação para candidatar de verdade.');
+  if (ligar && cfg.ensaio)
+    registrar('alerta', 'Atenção: o modo ensaio está LIGADO. O robô preenche o formulário inteiro mas NÃO envia nada. Desligue o ensaio em Automação para candidatar de verdade.');
   if (ligar && cfg.modo !== 'automatico') registrar('info', 'Modo manual: a fila só anda quando você clica em "Quero me candidatar". Mude para automático em Automação para o robô andar sozinho.');
   emitir({ tipo: 'estado' });
   ultimaEspera = '';
-  if (ligar) void processarProxima(); // não espera os 20 s do laço
+  if (!ligar) return;
+  enfileirarCompativeis('robô ligado'); // as vagas já encontradas entram agora, sem esperar a próxima varredura
+  void processarProxima(); // e começa já, sem esperar os 20 s do laço
 }
 
 export const statusFila = (): Vaga[] => vagas.listar();
