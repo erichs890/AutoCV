@@ -170,6 +170,13 @@ const NA_FILA: Vaga['status'][] = ['na_fila', 'em_andamento', 'aguardando_pergun
 const modeloAceito = (v: Vaga, cfg: ReturnType<typeof ler.automacao>) => v.modelo === 'indefinido' || cfg.regimes.includes(v.modelo);
 
 /**
+ * O robô pode enviar currículo pela plataforma desta vaga? (Plataformas › "Enviar currículo por aqui".)
+ * Vale só para a fila automática: clicar em "Candidatar" numa vaga é um ato seu, e um filtro do robô não
+ * manda em você. Conexão sem o campo = pode, para as conexões criadas antes disto continuarem funcionando.
+ */
+export const plataformaEnviaCurriculo = (v: Vaga) => ler.conexoes()[v.plataforma]?.enviar !== false;
+
+/**
  * Põe na fila as vagas JÁ ENCONTRADAS que passam nos filtros atuais, da mais compatível para a menos.
  *
  * Antes, só vaga recém-descoberta entrava na fila: ligar o modo automático com 178 vagas encontradas não fazia
@@ -215,7 +222,7 @@ export function enfileirarCompativeis(motivo: string): number {
   // chegando ao mesmo recrutador é pior do que não se candidatar
   const jaVistas = new Set(naFila.map(chaveDaVaga));
   const candidatas = todas
-    .filter(v => v.status === 'encontrada' && v.score >= cfg.scoreMinimo && modeloAceito(v, cfg) && !jaCandidatado(v))
+    .filter(v => v.status === 'encontrada' && v.score >= cfg.scoreMinimo && modeloAceito(v, cfg) && plataformaEnviaCurriculo(v) && !jaCandidatado(v))
     .sort((a, b) => b.score - a.score)
     .filter(v => {
       const chave = chaveDaVaga(v);
@@ -224,7 +231,12 @@ export function enfileirarCompativeis(motivo: string): number {
       return true;
     });
 
-  if (!candidatas.length) return 0;
+  if (!candidatas.length) {
+    // "liguei o robô e a fila continua vazia": se o que barrou foi o filtro de plataformas, diga isso
+    const barradas = todas.filter(v => v.status === 'encontrada' && v.score >= cfg.scoreMinimo && modeloAceito(v, cfg) && !jaCandidatado(v) && !plataformaEnviaCurriculo(v));
+    if (barradas.length) registrar('info', `${barradas.length} vaga(s) compatível(is) ficaram de fora: o envio está desligado para a plataforma delas (Plataformas).`);
+    return 0;
+  }
   if (restantes <= 0) {
     registrar('info', `${candidatas.length} vaga(s) compatível(is) aguardando: o limite de ${cfg.limiteDiario} por dia já está tomado (${enviosHoje()} enviada(s), ${naFila.length} na fila).`);
     return 0;

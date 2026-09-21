@@ -89,6 +89,7 @@ export default function Automacao() {
   const [reavaliando, setReavaliando] = useState(false); // marca de tempo do ultimo salvamento, para o "Salvo!" do botao
   const [adaptacaoDe, setAdaptacaoDe] = useState<string | null>(null); // vaga cujo currículo adaptado está aberto
   const [mostrarIgnoradas, setMostrarIgnoradas] = useState(false);
+  const [mostrarEnviadas, setMostrarEnviadas] = useState(false);
   const set = (mudanca: Partial<ConfigAutomacao>) => setCfg(c => ({ ...c, ...mudanca }));
 
   const conectadas = PLATAFORMAS.filter(p => estado.conexoes[p.id]);
@@ -96,9 +97,12 @@ export default function Automacao() {
   const ativo = estado.robo === 'ativo';
   const pendente = estado.vagas.find(v => v.pendencia);
   const abertas = estado.vagas.filter(v => v.status !== 'encerrada');
-  const encontradas = abertas.filter(v => v.status !== 'ignorada');
-  const ignoradas = abertas.length - encontradas.length;
-  const listadas = mostrarIgnoradas ? [...abertas].sort((a, b) => b.score - a.score) : encontradas;
+  // Vaga já enviada sai da lista: o trabalho com ela acabou, e ficar olhando currículo que já foi só atrapalha
+  // quem procura o que ainda falta. O histórico completo fica no Painel, em "Últimas candidaturas".
+  const enviadas = abertas.filter(v => v.status === 'enviada');
+  const ignoradas = abertas.filter(v => v.status === 'ignorada');
+  const encontradas = abertas.filter(v => v.status !== 'ignorada' && v.status !== 'enviada');
+  const listadas = [...encontradas, ...(mostrarIgnoradas ? ignoradas : []), ...(mostrarEnviadas ? enviadas : [])].sort((a, b) => b.score - a.score);
 
   async function guardar(ligar: boolean) {
     const form = document.getElementById('form-automacao') as HTMLFormElement | null;
@@ -231,7 +235,13 @@ export default function Automacao() {
           icon={Target}
           title="Vagas encontradas"
           tone="purple"
-          aside={encontradas.length ? `${encontradas.length} compatíveis${ignoradas ? ` · ${ignoradas} abaixo do mínimo` : ''}` : undefined}
+          aside={
+            encontradas.length || enviadas.length
+              ? [encontradas.length ? `${encontradas.length} compatíveis` : '', ignoradas.length ? `${ignoradas.length} abaixo do mínimo` : '', enviadas.length ? `${enviadas.length} já enviadas` : '']
+                  .filter(Boolean)
+                  .join(' · ')
+              : undefined
+          }
           bodyClassName="p-0"
         >
           {listadas.length === 0 ? (
@@ -259,14 +269,24 @@ export default function Automacao() {
               )}
             </VerMais>
           )}
-          {ignoradas > 0 && (
+          {ignoradas.length > 0 && (
             <button
               type="button"
               className="w-full border-t border-panel-border px-3.5 py-2 text-left text-[11px] font-bold text-ink-soft hover:bg-page-bg"
               onClick={() => setMostrarIgnoradas(m => !m)}
             >
-              {mostrarIgnoradas ? 'Ocultar' : 'Mostrar'} {ignoradas} vaga(s) abaixo de {estado.automacao.scoreMinimo}% de compatibilidade
+              {mostrarIgnoradas ? 'Ocultar' : 'Mostrar'} {ignoradas.length} vaga(s) abaixo de {estado.automacao.scoreMinimo}% de compatibilidade
             </button>
+          )}
+          {enviadas.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-panel-border px-3.5 py-2">
+              <button type="button" className="text-left text-[11px] font-bold text-ink-soft hover:underline" onClick={() => setMostrarEnviadas(m => !m)}>
+                {mostrarEnviadas ? 'Ocultar' : 'Mostrar'} {enviadas.length} vaga(s) com currículo já enviado
+              </button>
+              <Link to="/painel" className="text-[11px] font-bold text-blue-dark underline underline-offset-2">
+                Histórico completo no Painel
+              </Link>
+            </div>
           )}
         </Panel>
 
@@ -303,10 +323,13 @@ export default function Automacao() {
                 <div className="grid grid-cols-2 gap-2.5 max-lg:grid-cols-1">
                   {conectadas.map(p => (
                     <div key={p.id} className="flex items-center gap-2 rounded-[7px] border border-panel-border px-2.5 py-2">
-                      <span aria-hidden className={`size-2 shrink-0 rounded-full ${p.cor}`} />
-                      <span>
+                      <span aria-hidden className={`size-2 shrink-0 rounded-full ${estado.conexoes[p.id]?.enviar === false ? 'bg-ink-soft/40' : p.cor}`} />
+                      <span className="min-w-0">
                         <span className="block text-xs font-bold">{p.nome}</span>
-                        <span className="block text-[10px] text-ink-soft">{empresasAtivas} empresa(s) monitoradas</span>
+                        {/* "N empresas monitoradas" só existe no InHire; nas outras era um número emprestado */}
+                        <span className="block text-[10px] text-ink-soft">
+                          {estado.conexoes[p.id]?.enviar === false ? 'só busca — envio desligado' : p.id === 'inhire' ? `${empresasAtivas} empresa(s) monitoradas` : 'buscando e enviando'}
+                        </span>
                       </span>
                     </div>
                   ))}

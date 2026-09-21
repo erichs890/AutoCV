@@ -347,6 +347,30 @@ assert.equal(st(semCv), 'erro');
 assert.equal(chamadas.get(semCv), undefined, 'nem deve abrir a plataforma sem currículo');
 console.log('✓ Sem currículo: erro claro e nenhuma chamada à plataforma');
 
+// ─── 10) Filtro de portal: envio desligado numa plataforma tira as vagas dela da fila ────────────
+cenario();
+kv.set('conexoes', { teste: { conectadaEm: new Date().toISOString(), enviar: false } });
+const semEnvio = enfileirar({ status: 'encontrada', posicao: undefined });
+assert.equal(enfileirarCompativeis('teste'), 0, 'plataforma com envio desligado não põe vaga na fila');
+assert.equal(st(semEnvio), 'encontrada', 'a vaga continua na lista, só não entra na fila');
+// Desligar o envio não é desconectar: um clique seu em "Candidatar" continua valendo
+await candidatarAgora(semEnvio);
+assert.equal(st(semEnvio), 'enviada', 'o filtro é do robô, não seu: o envio manual continua funcionando');
+
+cenario();
+kv.set('conexoes', { teste: { conectadaEm: new Date().toISOString(), enviar: true } });
+const comEnvio = enfileirar({ status: 'encontrada', posicao: undefined });
+assert.equal(enfileirarCompativeis('teste'), 1);
+assert.equal(st(comEnvio), 'na_fila');
+
+// Conexão antiga, gravada antes deste campo existir, continua enviando
+cenario();
+kv.set('conexoes', { teste: { conectadaEm: new Date().toISOString() } });
+const semCampo = enfileirar({ status: 'encontrada', posicao: undefined });
+assert.equal(enfileirarCompativeis('teste'), 1, 'conexão sem o campo `enviar` continua enviando');
+assert.equal(st(semCampo), 'na_fila');
+console.log('✓ Filtro por portal: envio desligado tira da fila, mantém na lista e não bloqueia o envio manual');
+
 apagarTudo();
 log.listar(0);
 console.log('\nFila: tudo certo.');

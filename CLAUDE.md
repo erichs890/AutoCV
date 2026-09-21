@@ -5,7 +5,7 @@ App local que acha vagas (InHire, Indeed, Vagas PJ) e candidata sozinho. Front V
 ## Rodar
 
 `npm run core` (núcleo, :4780) + `npm run dev` (UI, :5173) — ou `start.bat`. Dados em `%LOCALAPPDATA%\AutoCV`.
-Antes de commitar: `npm run check` (50 verificações) e `npm run build` (biome + tsc + vite).
+Antes de commitar: `npm run check` (51 verificações) e `npm run build` (biome + tsc + vite).
 
 ## Fluxo
 
@@ -34,7 +34,7 @@ varredura → score → fila → `executarCandidatura` → adapter → **preench
 | senioridade, área, rigor de função | `automacao` — editável **só** em Configurações; Automação espelha |
 | cidade (presencial/híbrida) e países aceitos (remota) | `perfil.cidade` + `perfil.paisesRemoto` → `ler.localizacao()` |
 | ritmo, limite, janela, modo, ensaio, adaptação, modo de perguntas | `automacao` (Automação) |
-| plataforma ligada | `conexoes` |
+| plataforma ligada **e se o robô envia por ela** (`enviar`) | `conexoes` |
 | respostas de autodeclaração | `sensiveis` |
 | perguntas das empresas | `perguntas` |
 

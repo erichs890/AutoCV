@@ -87,6 +87,12 @@ export interface Perfil {
 export interface Conexao {
   conectadaEm: string; // ISO
   usuario?: string;
+  /**
+   * O robô pode enviar currículo por esta plataforma? Ausente = sim (as conexões antigas continuam valendo).
+   * Desligado, ela continua sendo varrida e as vagas continuam aparecendo na lista — só não entram na fila.
+   * Fica aqui, e não em `automacao`, para não existir um segundo lugar dizendo quais plataformas valem.
+   */
+  enviar?: boolean;
 }
 
 export interface ConfigAutomacao {

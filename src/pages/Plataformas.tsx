@@ -56,6 +56,20 @@ export default function Plataformas() {
     }
   }
 
+  /**
+   * Liga/desliga o envio por uma plataforma sem desconectá-la: ela continua sendo varrida e as vagas continuam
+   * aparecendo na lista — só não entram na fila do robô. Mora na própria conexão para não existir um segundo
+   * lugar dizendo quais plataformas valem.
+   */
+  async function alternarEnvio(id: string) {
+    const conexao = estado.conexoes[id];
+    if (!conexao) return;
+    const enviar = conexao.enviar === false;
+    await salvar({ conexoes: { ...estado.conexoes, [id]: { ...conexao, enviar } } });
+    const nome = PLATAFORMAS.find(p => p.id === id)?.nome ?? id;
+    registrar(enviar ? 'sucesso' : 'alerta', enviar ? `O robô volta a enviar currículo pelo ${nome}.` : `O robô para de enviar currículo pelo ${nome} (as vagas continuam aparecendo).`);
+  }
+
   async function adicionar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const campo = e.currentTarget.elements.namedItem('empresa') as HTMLInputElement;
@@ -144,6 +158,17 @@ export default function Plataformas() {
                         Abrir o site
                         <span className="sr-only"> de {p.nome}</span>
                       </a>
+                    )}
+                    {conexao && p.disponivel && (
+                      <label className="flex cursor-pointer items-start gap-2 rounded-[7px] border border-panel-border bg-page-bg px-2.5 py-2">
+                        <input type="checkbox" className="mt-0.5 size-3.5 shrink-0 accent-green-deep" checked={conexao.enviar !== false} onChange={() => alternarEnvio(p.id)} />
+                        <span className="text-[11px] leading-tight">
+                          <span className="block font-bold">Enviar currículo por aqui</span>
+                          <span className="block text-ink-soft">
+                            {conexao.enviar === false ? 'Desligado: acha as vagas, mas o robô não se candidata.' : 'O robô se candidata às vagas desta plataforma.'}
+                          </span>
+                        </span>
+                      </label>
                     )}
                     <div className="mt-auto">
                       {conexao && p.disponivel ? (
