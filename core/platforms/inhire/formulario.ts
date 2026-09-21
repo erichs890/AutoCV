@@ -472,7 +472,15 @@ async function preencherCampo(raiz: Raiz, c: CampoDom, r: Resolucao, dados: Dado
 }
 
 // ─── 1.4 Navegação entre etapas ─────────────────────────────────────────────
-async function acharBotao(raiz: Raiz): Promise<{ loc: Locator; texto: string; final: boolean } | null> {
+/** Textos que identificam "próxima etapa", "envio final" e "candidatura aceita" numa plataforma. */
+export interface Convencoes {
+  proximo: RegExp;
+  final: RegExp;
+  sucesso: RegExp;
+}
+const CONVENCOES_INHIRE: Convencoes = { proximo: BOTAO_PROXIMO, final: BOTAO_FINAL, sucesso: SUCESSO };
+
+async function acharBotao(raiz: Raiz, conv: Convencoes = CONVENCOES_INHIRE): Promise<{ loc: Locator; texto: string; final: boolean } | null> {
   const botoes = raiz.locator('button, input[type="submit"]');
   const total = await botoes.count();
   let final: { loc: Locator; texto: string; final: boolean } | null = null;
@@ -480,8 +488,8 @@ async function acharBotao(raiz: Raiz): Promise<{ loc: Locator; texto: string; fi
     const b = botoes.nth(i);
     if (!(await b.isVisible().catch(() => false))) continue;
     const texto = ((await b.textContent()) ?? (await b.getAttribute('value')) ?? '').replace(/\s+/g, ' ').trim();
-    if (BOTAO_PROXIMO.test(texto)) return { loc: b, texto, final: false };
-    if (!final && BOTAO_FINAL.test(texto)) final = { loc: b, texto, final: true };
+    if (conv.proximo.test(texto)) return { loc: b, texto, final: false };
+    if (!final && conv.final.test(texto)) final = { loc: b, texto, final: true };
   }
   return final;
 }
@@ -841,6 +849,8 @@ const MAX_ETAPAS = 8;
 export interface OpcoesFormulario {
   /** Empresa com requireCustomFormCompletion: o botão final abre o questionário sem criar o talento (ensaio pode clicar) */
   fluxoCondicional?: boolean;
+  /** Outra plataforma usando este motor (Indeed) informa os seus textos de botão e de confirmação */
+  convencoes?: Convencoes;
   /**
    * Prova dura de envio: true depois que uma rota de criação da candidatura respondeu 2xx (index.ts escuta a rede).
    * Enquanto o texto da tela é redação do InHire (pode mudar sem aviso), isto é o fato. Duas consequências:
@@ -864,7 +874,8 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
     }
     return { resultado: { status: 'erro', motivo }, etapas, perguntasRespondidas, typeform };
   };
-  const sucessoNaTela = async () => SUCESSO.test(await page.evaluate(() => document.body.innerText).catch(() => ''));
+  const conv = opcoes.convencoes ?? CONVENCOES_INHIRE;
+  const sucessoNaTela = async () => conv.sucesso.test(await page.evaluate(() => document.body.innerText).catch(() => ''));
 
   for (let etapa = 1; etapa <= MAX_ETAPAS; etapa++) {
     // Confirmação pode aparecer a qualquer momento (depois do questionário no fluxo condicional, por exemplo)

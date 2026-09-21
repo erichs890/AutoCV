@@ -1,4 +1,4 @@
-import { navegador } from '../browser.ts';
+import { comNavegadorDePdf } from '../browser.ts';
 
 // Template único e limpo para todo currículo gerado (independente da vaga).
 const CSS = `
@@ -52,15 +52,15 @@ export function markdownParaHtml(md: string): string {
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>${CSS}</style></head><body>${html.join('\n')}</body></html>`;
 }
 
-/** Gera o PDF final em `caminho` a partir do Markdown, usando o navegador (Chromium/Edge) para renderizar. */
-export async function markdownParaPdf(md: string, caminho: string, mostrarNavegador = false): Promise<string> {
-  const ctx = await navegador(mostrarNavegador);
-  const page = await ctx.newPage();
-  try {
+/**
+ * Gera o PDF final em `caminho` a partir do Markdown. Sempre num Chromium oculto à parte (browser.ts explica):
+ * page.pdf() não existe no Firefox nem no Edge com a janela à mostra. `_mostrarNavegador` ficou só pela assinatura.
+ */
+export async function markdownParaPdf(md: string, caminho: string, _mostrarNavegador = false): Promise<string> {
+  return comNavegadorDePdf(async b => {
+    const page = await b.newPage();
     await page.setContent(markdownParaHtml(md), { waitUntil: 'load' });
     await page.pdf({ path: caminho, format: 'A4', printBackground: true });
     return caminho;
-  } finally {
-    await page.close().catch(() => {});
-  }
+  });
 }

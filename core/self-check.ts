@@ -89,7 +89,7 @@ const configurado = calcularScore({ ...VAGA, titulo: BASE + ' Sênior' }, perfil
 assert.ok(configurado.score > pleno.score && /senioridade ok/.test(configurado.motivo), `senioridade configurada deve sobrepor a do currículo: ${configurado.score} (${configurado.motivo})`);
 console.log(`✓ Senioridade: júnior ${junior.score} · pleno ${pleno.score} · sênior ${senior.score}`);
 
-// 3c) Local: só pesa em vaga presencial
+// 3c) Localização: presencial/híbrida pela cidade, remota pelos países escolhidos
 const { lerLocal } = await import('./resume/score.ts');
 assert.deepEqual(lerLocal('São Paulo - SP'), { cidade: 'sao paulo', uf: 'SP' });
 assert.deepEqual(lerLocal('Belo Horizonte, Minas Gerais'), { cidade: 'belo horizonte', uf: 'MG' });
@@ -100,20 +100,68 @@ assert.deepEqual(lerLocal('São Paulo, SP, BR'), { cidade: 'sao paulo', uf: 'SP'
 assert.deepEqual(lerLocal('Rio de Janeiro, RJ, BR'), { cidade: 'rio de janeiro', uf: 'RJ' });
 assert.deepEqual(lerLocal('BR'), { cidade: '', uf: '' });
 assert.deepEqual(lerLocal('São Paulo'), { cidade: 'sao paulo', uf: 'SP' });
-const meu = { local: 'Campinas - SP' };
-const naCidade = calcularScore({ ...VAGA, modelo: 'presencial', local: 'Campinas, SP' }, perfil, meu);
-const noEstado = calcularScore({ ...VAGA, modelo: 'presencial', local: 'São Paulo - SP' }, perfil, meu);
+const { paisDoLocal, vagaCompativelComLocalizacao } = await import('./localizacao.ts');
+assert.equal(paisDoLocal('São Paulo, SP, BR'), 'Brasil');
+assert.equal(paisDoLocal('Campinas - SP'), 'Brasil');
+assert.equal(paisDoLocal('Lisboa, PT'), 'Portugal');
+assert.equal(paisDoLocal('Porto, Portugal'), 'Portugal');
+assert.equal(paisDoLocal('Belém, PA'), 'Brasil', 'PA é Pará, não Panamá');
+assert.equal(paisDoLocal('London, UK'), 'Reino Unido');
+assert.equal(paisDoLocal('Remoto'), '');
+assert.equal(paisDoLocal('BR'), 'Brasil');
+const meu = { localizacao: { localizacaoPresencial: 'Fortaleza - CE', paisesRemoto: ['Brasil', 'Portugal'] } };
+const pref = meu.localizacao;
+const naCidade = calcularScore({ ...VAGA, modelo: 'presencial', local: 'Fortaleza, CE, BR' }, perfil, meu);
+const noEstado = calcularScore({ ...VAGA, modelo: 'presencial', local: 'Sobral - CE' }, perfil, meu);
 const foraEstado = calcularScore({ ...VAGA, modelo: 'presencial', local: 'Curitiba - PR' }, perfil, meu);
-const remota = calcularScore({ ...VAGA, modelo: 'remoto', local: 'Curitiba - PR' }, perfil, meu);
-const hibrida = calcularScore({ ...VAGA, modelo: 'hibrido', local: 'Curitiba - PR' }, perfil, meu);
+const hibridaFora = calcularScore({ ...VAGA, modelo: 'hibrido', local: 'São Paulo, SP, BR' }, perfil, meu);
+const remotaBR = calcularScore({ ...VAGA, modelo: 'remoto', local: 'Curitiba - PR' }, perfil, meu);
+const remotaPT = calcularScore({ ...VAGA, modelo: 'remoto', local: 'Lisboa, PT' }, perfil, meu);
+const remotaUS = calcularScore({ ...VAGA, modelo: 'remoto', local: 'Austin, TX, US' }, perfil, meu);
+const remotaLivre = calcularScore({ ...VAGA, modelo: 'remoto', local: '' }, perfil, meu);
 assert.equal(naCidade.score, score, 'mesma cidade não muda o score');
-assert.ok(foraEstado.score < noEstado.score && noEstado.score < naCidade.score, `presencial deve cair por distância: ${naCidade.score} / ${noEstado.score} / ${foraEstado.score}`);
-assert.ok(foraEstado.score <= score * 0.25, `outro estado deve perder 80%: ${foraEstado.score}`);
-assert.equal(remota.score, score, 'remota não considera cidade');
-assert.equal(hibrida.score, score, 'híbrida não considera cidade');
-assert.equal(calcularScore({ ...VAGA, modelo: 'presencial', local: 'Curitiba - PR' }, perfil).score, score, 'sem cidade no perfil não penaliza');
-assert.ok(/fora do seu estado/.test(foraEstado.motivo), foraEstado.motivo);
-console.log(`✓ Local presencial: cidade ${naCidade.score} · estado ${noEstado.score} · fora ${foraEstado.score} · remota ${remota.score}`);
+assert.ok(noEstado.score < naCidade.score && noEstado.score > 0, `outra cidade do estado: desconto, não exclusão (${noEstado.score})`);
+assert.equal(foraEstado.score, 0, 'presencial em outro estado é incompatível');
+assert.equal(hibridaFora.score, 0, 'híbrida segue a mesma regra da presencial');
+assert.equal(remotaBR.score, score, 'remota no Brasil: a cidade não importa');
+assert.equal(remotaPT.score, score, 'remota em Portugal, país escolhido');
+assert.equal(remotaUS.score, 0, 'remota restrita a país não escolhido');
+assert.equal(remotaLivre.score, score, 'remota sem país declarado é compatível');
+assert.equal(calcularScore({ ...VAGA, modelo: 'presencial', local: 'Curitiba - PR' }, perfil).score, score, 'sem preferências não penaliza');
+assert.equal(calcularScore({ ...VAGA, modelo: 'presencial', local: 'Curitiba - PR' }, perfil, { localizacao: { localizacaoPresencial: '', paisesRemoto: ['Brasil'] } }).score, score, 'sem cidade no perfil não penaliza');
+assert.ok(/fora do seu estado/.test(foraEstado.motivo) && /fora dos países/.test(remotaUS.motivo), `${foraEstado.motivo} | ${remotaUS.motivo}`);
+assert.equal(vagaCompativelComLocalizacao({ modelo: 'presencial', local: 'Lisboa', pais: 'Portugal' }, pref).compativel, false, 'presencial em outro país');
+assert.equal(vagaCompativelComLocalizacao({ modelo: 'remoto', local: '', pais: 'Portugal' }, pref).compativel, true, 'vaga.pais (domínio do Indeed) vale mesmo sem local');
+assert.equal(vagaCompativelComLocalizacao({ modelo: 'indefinido', local: 'Curitiba - PR' }, pref).compativel, true, 'modelo não informado: na dúvida, mostra');
+console.log(`✓ Localização: cidade ${naCidade.score} · estado ${noEstado.score} · outro estado ${foraEstado.score} · remota BR/PT ${remotaBR.score}/${remotaPT.score} · remota EUA ${remotaUS.score}`);
+
+// 3d) Indeed: plano de buscas por país, modelo de trabalho pelos atributos da vaga, filtro de candidatura simplificada
+const { planejarConsultas, modeloDe, montarVagaIndeed, urlDeBusca } = await import('./platforms/indeed/busca.ts');
+const plano = planejarConsultas(['Assistente Fiscal', 'Analista Fiscal', 'Terceiro cargo'], pref);
+assert.deepEqual(plano.map(c => `${c.host}|${c.remoto ? 'remoto' : 'local'}`), ['br.indeed.com|local', 'br.indeed.com|remoto', 'pt.indeed.com|remoto', 'br.indeed.com|local', 'br.indeed.com|remoto', 'pt.indeed.com|remoto'], 'presencial só no país da pessoa; remoto em cada país escolhido; no máximo 2 cargos');
+assert.ok(plano[0].url.includes('l=Fortaleza') && !plano[0].url.includes('sc='), plano[0].url);
+assert.ok(plano[2].url.startsWith('https://pt.indeed.com/jobs?') && decodeURIComponent(plano[2].url).includes('sc=0kf:attr(DSQF7);') && !plano[2].url.includes('l='), plano[2].url);
+assert.equal(planejarConsultas(['X'], { localizacaoPresencial: '', paisesRemoto: ['Paraguai'] }).length, 0, 'país sem Indeed mapeado não gera busca');
+assert.equal(urlDeBusca('br.indeed.com', 'assistente fiscal', 'Fortaleza, CE', false), 'https://br.indeed.com/jobs?q=assistente+fiscal&l=Fortaleza%2C+CE');
+assert.equal(modeloDe({ suidsRemoto: ['DSQF7'], local: 'Fortaleza, CE' }, false), 'remoto');
+assert.equal(modeloDe({ suidsRemoto: ['PAXZC', 'DSQF7'], local: 'Fortaleza, CE' }, false), 'hibrido', 'Home Office + Modelo Híbrido = híbrido');
+assert.equal(modeloDe({ suidsRemoto: [], local: 'Fortaleza, CE' }, false), 'presencial');
+assert.equal(modeloDe({ suidsRemoto: [], local: 'Remoto' }, false), 'remoto');
+const cfgTeste = { area: '', cargo: '', senioridade: '', scoreMinimo: 30 } as Parameters<typeof montarVagaIndeed>[3];
+const card = { jobkey: 'a7a47a8368d6eed7', titulo: 'Desenvolvedor Back-end Júnior', empresa: 'ACME', local: 'Fortaleza, CE', facil: true, trecho: '<ul><li>Java, <b>Spring</b> Boot e SQL</li></ul>', tipos: ['Efetivo/CLT'], suidsRemoto: [] as string[] };
+const vFortaleza = montarVagaIndeed(card, plano[0], perfil, cfgTeste, pref);
+assert.equal(vFortaleza.id, 'indeed:a7a47a8368d6eed7');
+assert.equal(vFortaleza.plataforma, 'indeed');
+assert.equal(vFortaleza.url, 'https://br.indeed.com/viewjob?jk=a7a47a8368d6eed7');
+assert.deepEqual([vFortaleza.modelo, vFortaleza.pais, vFortaleza.regime, vFortaleza.status], ['presencial', 'Brasil', 'CLT', 'encontrada'], JSON.stringify(vFortaleza));
+assert.ok(vFortaleza.descricao.includes('Spring') && !vFortaleza.descricao.includes('<'), vFortaleza.descricao);
+const vPortugal = montarVagaIndeed({ ...card, jobkey: 'pt1', local: 'Teletrabalho', suidsRemoto: ['DSQF7'] }, plano[2], perfil, cfgTeste, pref);
+assert.deepEqual([vPortugal.modelo, vPortugal.pais, vPortugal.status], ['remoto', 'Portugal', 'encontrada'], 'remota de Portugal, país escolhido');
+const vForaDaLista = montarVagaIndeed({ ...card, jobkey: 'pt2', local: 'Teletrabalho', suidsRemoto: ['DSQF7'] }, plano[2], perfil, cfgTeste, { ...pref, paisesRemoto: ['Brasil'] });
+assert.equal(vForaDaLista.status, 'ignorada', 'remota de país não escolhido fica de fora');
+const vOutroEstado = montarVagaIndeed({ ...card, jobkey: 'sp1', local: 'São Paulo, SP' }, plano[0], perfil, cfgTeste, pref);
+assert.equal(vOutroEstado.status, 'ignorada', 'presencial em outro estado fica de fora');
+console.log(`✓ Indeed: ${plano.length} buscas planejadas (BR local+remoto, PT remoto) · Fortaleza ${vFortaleza.score} · remota PT ${vPortugal.score} · fora da lista/estado ignoradas`);
 
 // 4) Adaptação sem invenção
 const adaptacao = adaptarCurriculo(CV, VAGA);

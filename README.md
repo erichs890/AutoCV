@@ -1,6 +1,6 @@
 # AutoCV
 
-Aplicação local que busca vagas e envia seu currículo automaticamente. Por enquanto só a plataforma **InHire** funciona; as outras aparecem como indisponíveis.
+Aplicação local que busca vagas e envia seu currículo automaticamente. Funcionam as plataformas **InHire** e **Indeed** (só vagas com "Candidatar-se facilmente"); as outras aparecem como indisponíveis.
 
 Roda no seu computador em dois processos: a interface (Vite + React) e o **núcleo** (Node + Playwright), que faz a automação de verdade.
 
@@ -29,9 +29,23 @@ Perguntas de **autodeclaração** (identidade de gênero, orientação sexual, c
 
 O InHire exige LinkedIn (pedido no cadastro) e pretensão salarial; algumas vagas pedem cidade e CPF: preencha em Configurações › Meus Dados, ou o robô pergunta na primeira candidatura e guarda. Quando uma vaga faz uma pergunta que você ainda não respondeu, ou quando o currículo adaptado precisa de aprovação, só aquela vaga pausa e a interface pede sua decisão.
 
+## Onde você aceita trabalhar
+
+Em **Configurações › Meus Dados** há dois campos independentes: **sua cidade**, que vale para vagas presenciais e híbridas (em outro estado ou país a vaga fica de fora; em outra cidade do seu estado ela perde pontos), e **os países das vagas 100% remotas**, com quantos você quiser (remota restrita a um país fora da lista fica de fora; remota sem país declarado sempre entra). A regra é uma só para todas as plataformas.
+
+## Indeed
+
+Em **Plataformas › Indeed › Entrar e conectar** abre uma janela do navegador do robô: você entra na sua conta ali (senha, código, captcha — tudo com você; o AutoCV não vê nem guarda a senha). O robô só considera vagas com **"Candidatar-se facilmente"**; as que levam ao site da empresa são descartadas na busca. Presenciais são buscadas no Indeed do seu país, com a sua cidade; remotas, no Indeed de cada país que você escolheu.
+
+O Indeed **bloqueia navegador oculto** e, depois de algumas páginas, pode pedir uma **verificação**. Por isso a janela sempre aparece, o robô faz poucas buscas (uma a cada 30 s, uma varredura automática por dia) e, se o Indeed bloquear ou pedir verificação, ele para e avisa: você pode resolver a verificação na janela; ele não tenta burlar. A candidatura pelo Indeed ainda não foi testada contra o site real — deixe o **modo ensaio** ligado na primeira vez.
+
 ## Descoberta de vagas
 
 O robô descobre as empresas sozinho. Ao conectar o InHire ele carrega uma lista inicial verificada e, **uma vez por dia**, consulta o Common Crawl (índice público e gratuito da web, sem chave) por endereços em `*.inhire.app`, confirma cada subdomínio na API do InHire e adiciona os ativos. Em **Configurações › Descoberta de vagas** você ajusta o intervalo de revarredura (padrão 6 h, roda mesmo com o robô parado), liga/desliga a descoberta e, se quiser, complementa com o Google Programmable Search (chave + ID do mecanismo). Em Plataformas dá para "Descobrir empresas agora", "Forçar varredura agora", adicionar, pausar ou remover empresas.
+
+## Navegador do robô
+
+Por padrão o robô usa o **Edge ou Chrome** que já está instalado. Em **Automação › Segurança › Navegador do robô** dá para trocar para o **Firefox**. Importante: o Playwright não consegue dirigir o Firefox instalado no Windows; ele usa uma cópia própria, que se instala uma vez com `npx playwright install firefox` (cerca de 130 MB). Se ela não estiver instalada, o robô avisa no log e usa o Edge. Cada navegador tem seu próprio perfil, então o login do Indeed precisa ser refeito ao trocar. O PDF do currículo adaptado é sempre gerado por um Edge/Chrome oculto, porque só ele sabe imprimir PDF. Nos testes o Firefox foi bem mais lento que o Edge (cerca de 1 min por formulário, contra 10 s).
 
 ## Modo ensaio
 

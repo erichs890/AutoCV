@@ -28,11 +28,16 @@ export type ResultadoCandidatura =
   | { status: 'pergunta'; pergunta: PerguntaExtra }
   | { status: 'erro'; motivo: string; captura?: string; formulario?: ResumoFormulario };
 
+export interface OpcoesBusca {
+  /** A pessoa clicou em "Buscar vagas agora" (plataformas com limite de varredura automática podem ignorá-lo) */
+  manual?: boolean;
+}
+
 // Cada plataforma implementa isto. O núcleo (fila, currículo, confirmação) não sabe nada de InHire.
 export interface PlatformAdapter {
   id: string;
   nome: string;
-  buscarVagas(perfil: PerfilBusca, cfg: ConfigAutomacao, log: Log): Promise<Vaga[]>;
+  buscarVagas(perfil: PerfilBusca, cfg: ConfigAutomacao, log: Log, opcoes?: OpcoesBusca): Promise<Vaga[]>;
   candidatar(vaga: Vaga, dados: DadosCandidatura, log: Log): Promise<ResultadoCandidatura>;
   /** Perguntas que a vaga com certeza vai fazer (schema via API), para resolver antes de abrir o navegador. */
   perguntasPrevias?(vaga: Vaga): Promise<PerguntaExtra[]>;

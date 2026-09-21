@@ -10,6 +10,7 @@ import { CPF_PATTERN, TELEFONE_PATTERN, mascaraCPF, mascaraMoeda, mascaraTelefon
 import ConfigIA from './ConfigIA';
 import ConfigDescoberta from './ConfigDescoberta';
 import ConfigSensiveis from './ConfigSensiveis';
+import { PAISES, PAISES_REMOTO_PADRAO } from '../paises';
 
 const abas = [
   { id: 'dados', label: 'Meus Dados', icon: User },
@@ -143,22 +144,68 @@ function Campo({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** Multi-seleção de países: campo com autocomplete (datalist nativo) e uma tag removível por país escolhido. */
+function SeletorPaises({ valor, onChange }: { valor: string[]; onChange: (v: string[]) => void }) {
+  const adicionar = (el: HTMLInputElement) => {
+    const pais = PAISES.find(x => x.nome.toLowerCase() === el.value.trim().toLowerCase());
+    if (!pais) return;
+    if (!valor.includes(pais.nome)) onChange([...valor, pais.nome]);
+    el.value = '';
+  };
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor="busca-pais" className="label">Vagas 100% remotas: de quais países</label>
+      <ul className="flex flex-wrap gap-1.5" aria-label="Países escolhidos">
+        {valor.map(n => (
+          <li key={n} className="inline-flex items-center gap-1 rounded-[9px] bg-blue-dark px-2 py-0.5 text-[11px] font-bold text-white">
+            {n}
+            <button type="button" aria-label={`Remover ${n}`} className="rounded p-0.5 hover:bg-white/20" onClick={() => onChange(valor.filter(x => x !== n))}>
+              <X size={11} aria-hidden />
+            </button>
+          </li>
+        ))}
+        {valor.length === 0 && <li className="text-[11px] text-ink-soft">Nenhum: qualquer vaga remota serve.</li>}
+      </ul>
+      <input
+        id="busca-pais"
+        name="buscaPais"
+        list="lista-paises"
+        placeholder="Digite um país e escolha na lista"
+        className="field"
+        onChange={e => adicionar(e.currentTarget)}
+        onKeyDown={e => {
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          adicionar(e.currentTarget);
+        }}
+      />
+      <datalist id="lista-paises">
+        {PAISES.filter(x => !valor.includes(x.nome)).map(x => (
+          <option key={x.iso} value={x.nome} />
+        ))}
+      </datalist>
+      <span className="text-[10px] text-ink-soft">Vaga remota restrita a um país fora desta lista fica de fora; remota sem país declarado sempre entra. No Indeed, o robô busca no site de cada país escolhido.</span>
+    </div>
+  );
+}
+
 function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
   const { estado, salvar } = useEstado();
   const p = estado.perfil!;
   const [sujo, setSujo] = useState(false);
+  const [paises, setPaises] = useState<string[]>(p.paisesRemoto ?? PAISES_REMOTO_PADRAO);
 
   async function enviar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const dados = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
-    const { regimePreferido, ...perfil } = dados;
-    await salvar({ perfil: { ...p, ...(perfil as unknown as Perfil) }, automacao: { ...estado.automacao, regimePreferido: regimePreferido as 'CLT' | 'PJ' | 'perguntar' } });
+    const { regimePreferido, buscaPais: _fora, ...perfil } = dados;
+    await salvar({ perfil: { ...p, ...(perfil as unknown as Perfil), paisesRemoto: paises }, automacao: { ...estado.automacao, regimePreferido: regimePreferido as 'CLT' | 'PJ' | 'perguntar' } });
     setSujo(false);
     onSalvar('Dados salvos.');
   }
 
   return (
-    <form className="flex flex-1 flex-col gap-4" onChange={() => setSujo(true)} onReset={() => setSujo(false)} onSubmit={enviar}>
+    <form className="flex flex-1 flex-col gap-4" onChange={() => setSujo(true)} onReset={() => { setSujo(false); setPaises(p.paisesRemoto ?? PAISES_REMOTO_PADRAO); }} onSubmit={enviar}>
       <Cabecalho titulo="Meus dados" sub="o robô usa isto para preencher os formulários das vagas" />
       <div className="flex gap-6 max-md:flex-col">
         <div className="flex w-[190px] shrink-0 flex-col items-center gap-2 self-start rounded-lg border border-panel-border p-3.5 max-md:w-full">
@@ -182,9 +229,19 @@ function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
             </select>
           </Campo>
           <Campo label="Cargo desejado"><input name="cargo" defaultValue={p.cargo ?? ''} className="field" /></Campo>
-          <Campo label="Cidade / Estado"><input name="cidade" placeholder="Ex.: Campinas - SP" autoComplete="address-level2" defaultValue={p.cidade ?? ''} className="field" /></Campo>
         </div>
       </div>
+
+      <section aria-labelledby="dados-local" className="flex flex-col gap-3 border-t border-panel-border pt-3.5">
+        <h3 id="dados-local" className="text-sm font-bold">Onde você aceita trabalhar</h3>
+        <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
+          <Campo label="Vagas presenciais e híbridas: sua cidade">
+            <input name="cidade" placeholder="Ex.: Fortaleza - CE" autoComplete="address-level2" defaultValue={p.cidade ?? ''} className="field" />
+            <span className="text-[10px] text-ink-soft">Uma cidade só. Vaga presencial ou híbrida em outro estado ou país fica de fora; em outra cidade do seu estado, perde pontos. Também é o que vai no campo "cidade" dos formulários.</span>
+          </Campo>
+          <SeletorPaises valor={paises} onChange={v => { setPaises(v); setSujo(true); }} />
+        </div>
+      </section>
 
       <section aria-labelledby="dados-extra" className="flex flex-col gap-3 border-t border-panel-border pt-3.5">
         <h3 id="dados-extra" className="text-sm font-bold">Dados complementares</h3>

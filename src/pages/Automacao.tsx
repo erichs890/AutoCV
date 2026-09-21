@@ -221,7 +221,7 @@ export default function Automacao() {
                 </label>
               </div>
               <p className="mt-2 text-[11px] text-ink-soft">
-                Vagas presenciais são comparadas com a sua cidade{' '}
+                Vagas presenciais e híbridas são comparadas com a sua cidade{' '}
                 {estado.perfil?.cidade ? (
                   <>({estado.perfil.cidade})</>
                 ) : (
@@ -229,7 +229,7 @@ export default function Automacao() {
                     — <Link to="/configuracoes" className="text-blue-dark hover:underline">preencha Cidade / Estado em Configurações</Link>
                   </>
                 )}
-                : outra cidade do mesmo estado perde 40%, outro estado perde 80%. Remotas e híbridas não mudam.
+                : outra cidade do mesmo estado perde 40%; outro estado ou país fica de fora. Remotas valem para {(estado.perfil?.paisesRemoto ?? ['Brasil']).join(', ') || 'qualquer país'}.
               </p>
               <div className="mt-3 flex flex-wrap items-end gap-3.5">
                 <div className="min-w-[260px] flex-1">
@@ -338,7 +338,17 @@ export default function Automacao() {
                   <input type="checkbox" checked={cfg.mostrarNavegador} onChange={e => set({ mostrarNavegador: e.target.checked })} className="size-[17px] shrink-0" />
                   <span>
                     <span className="block text-xs font-bold">Mostrar o navegador enquanto trabalha</span>
-                    <span className="block text-[10px] text-ink-soft">Abre uma janela do Edge/Chrome para você acompanhar cada passo.</span>
+                    <span className="block text-[10px] text-ink-soft">Abre uma janela do navegador para você acompanhar cada passo.</span>
+                  </span>
+                </label>
+                <label className={`flex flex-col gap-1 px-3 py-2.5 ${cartao}`}>
+                  <span className="text-xs font-bold">Navegador do robô</span>
+                  <select value={cfg.navegador} onChange={e => set({ navegador: e.target.value as 'edge' | 'firefox' })} className="field">
+                    <option value="edge">Microsoft Edge / Chrome (o que já está instalado)</option>
+                    <option value="firefox">Firefox (versão do Playwright)</option>
+                  </select>
+                  <span className="block text-[10px] text-ink-soft">
+                    O Firefox usado é uma cópia própria do robô, não o seu Firefox: favoritos, extensões e logins dele não aparecem, e o login do Indeed precisa ser refeito ao trocar. O PDF do currículo continua sendo gerado pelo Edge/Chrome, às escondidas.
                   </span>
                 </label>
               </div>
@@ -428,7 +438,7 @@ function VagaItem({ vaga: v, manual, pdfEnviado, onVerAdaptacao }: { vaga: Vaga;
           </span>
         </p>
         <p className="text-[11px] text-ink-soft">
-          {v.empresa} · {MODELO[v.modelo]} · {v.local || 'local não informado'} · {REGIME_VAGA[v.regime]}
+          {v.empresa} · {PLATAFORMAS.find(p => p.id === v.plataforma)?.nome ?? v.plataforma} · {MODELO[v.modelo]} · {v.local || v.pais || 'local não informado'} · {REGIME_VAGA[v.regime]}
           {v.senioridade && v.senioridade !== 'Indefinida' && ` · ${v.senioridade}`}
         </p>
         {v.motivo && <p className="mt-0.5 text-[11px] text-ink">{v.motivo}</p>}

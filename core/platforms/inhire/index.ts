@@ -13,7 +13,7 @@ import { ROTAS_ENVIO } from './selectors.ts';
 export { pretensaoEmReais } from './formulario.ts';
 
 // A busca é o módulo de descoberta (discovery.ts): lista de empresas + API pública. Aqui só a candidatura.
-const buscarVagas = (perfil: PerfilBusca, cfg: ConfigAutomacao, log: Log): Promise<Vaga[]> => varrer(perfil, { area: cfg.area, cargo: cfg.cargo, senioridade: cfg.senioridade, local: ler.perfil()?.cidade, scoreMinimo: cfg.scoreMinimo }, log);
+const buscarVagas = (perfil: PerfilBusca, cfg: ConfigAutomacao, log: Log): Promise<Vaga[]> => varrer(perfil, { area: cfg.area, cargo: cfg.cargo, senioridade: cfg.senioridade, localizacao: ler.localizacao(), scoreMinimo: cfg.scoreMinimo }, log);
 
 const jobIdDe = (vaga: Vaga) => vaga.id.replace(/^inhire:[^:]+:/, '');
 

@@ -9,6 +9,8 @@ export default function Plataformas() {
   const { estado, salvar, registrar } = useEstado();
   const [erro, setErro] = useState('');
   const [adicionando, setAdicionando] = useState(false);
+  const [entrando, setEntrando] = useState(false); // esperando o login manual na janela do Indeed
+  const [erroIndeed, setErroIndeed] = useState('');
 
   const conectadas = Object.keys(estado.conexoes).length;
   const conexaoInhire = estado.conexoes.inhire;
@@ -25,10 +27,23 @@ export default function Plataformas() {
     registrar('sucesso', `InHire conectado: ${total} empresa(s) monitoradas.`);
   }
 
-  async function desconectar() {
-    const { inhire: _fora, ...resto } = estado.conexoes;
-    await salvar({ conexoes: resto, automacao: { ...estado.automacao, plataformas: estado.automacao.plataformas.filter(p => p !== 'inhire') } });
-    registrar('alerta', 'InHire desconectado (a lista de empresas foi mantida).');
+  async function desconectar(id = 'inhire') {
+    const { [id]: _fora, ...resto } = estado.conexoes;
+    await salvar({ conexoes: resto, automacao: { ...estado.automacao, plataformas: estado.automacao.plataformas.filter(p => p !== id) } });
+    registrar('alerta', id === 'inhire' ? 'InHire desconectado (a lista de empresas foi mantida).' : 'Indeed desconectado (a sessão continua no navegador do robô até você sair por lá).');
+  }
+
+  // Indeed: o login é feito por você na janela do robô; o AutoCV não vê nem guarda a senha
+  async function conectarIndeed() {
+    setEntrando(true);
+    setErroIndeed('');
+    try {
+      await post('/indeed/entrar');
+    } catch (err) {
+      setErroIndeed((err as Error).message);
+    } finally {
+      setEntrando(false);
+    }
   }
 
   async function adicionar(e: FormEvent<HTMLFormElement>) {
@@ -51,7 +66,7 @@ export default function Plataformas() {
       <div className="rounded-lg border border-panel-border bg-panel px-3 py-[9px]">
         <p className="text-[13px] font-bold">
           {conectadas} {conectadas === 1 ? 'plataforma conectada' : 'plataformas conectadas'}{' '}
-          <span className="text-xs font-normal text-ink-soft">• por enquanto só o InHire está disponível; as outras chegam como plugins</span>
+          <span className="text-xs font-normal text-ink-soft">• InHire e Indeed disponíveis; as outras chegam como plugins</span>
         </p>
       </div>
 
@@ -77,18 +92,24 @@ export default function Plataformas() {
                   ? conexao
                     ? `${ativas.length} empresa(s) monitoradas · ${vagasAtivas} vagas ativas`
                     : 'Páginas de vagas públicas, sem login. O robô descobre as empresas que usam InHire e acompanha as vagas delas.'
-                  : 'Integração ainda não implementada.'}
+                  : p.id === 'indeed'
+                    ? conexao
+                      ? `${estado.vagas.filter(v => v.plataforma === 'indeed' && v.status !== 'encerrada').length} vagas com candidatura simplificada · o robô usa janela visível`
+                      : 'Só vagas com "Candidatar-se facilmente". Você entra na sua conta numa janela do robô; o AutoCV não vê a senha. O Indeed bloqueia navegador oculto, então a janela sempre aparece.'
+                    : 'Integração ainda não implementada.'}
               </p>
+              {p.id === 'indeed' && entrando && <p role="status" className="text-[11px] font-bold text-amber-ink">Entre na sua conta na janela do Indeed que abriu (até 5 min)...</p>}
+              {p.id === 'indeed' && erroIndeed && <p role="alert" className="text-[11px] font-bold text-orange-deep">{erroIndeed}</p>}
               <div className="mt-auto">
-                {p.id === 'inhire' && conexao ? (
-                  <button type="button" className="btn btn-secondary btn-sm w-full" onClick={desconectar}>
+                {conexao && p.disponivel ? (
+                  <button type="button" className="btn btn-secondary btn-sm w-full" onClick={() => desconectar(p.id)}>
                     <Unplug size={14} aria-hidden />
                     Desconectar
                   </button>
                 ) : (
-                  <button type="button" className="btn btn-success btn-sm w-full" disabled={!p.disponivel} onClick={conectar}>
+                  <button type="button" className="btn btn-success btn-sm w-full" disabled={!p.disponivel || (p.id === 'indeed' && entrando)} onClick={p.id === 'indeed' ? conectarIndeed : conectar}>
                     <Plug size={14} aria-hidden />
-                    {p.disponivel ? 'Conectar' : 'Indisponível'}
+                    {!p.disponivel ? 'Indisponível' : p.id === 'indeed' ? (entrando ? 'Aguardando login...' : 'Entrar e conectar') : 'Conectar'}
                     <span className="sr-only"> {p.nome}</span>
                   </button>
                 )}

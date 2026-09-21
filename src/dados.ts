@@ -1,6 +1,6 @@
 import type { Plataforma, StatusVaga } from './types';
 
-// Catálogo fixo do produto. Só o InHire tem adapter no núcleo; as outras ficam "Indisponível".
+// Catálogo fixo do produto. InHire e Indeed têm adapter no núcleo; as outras ficam "Indisponível".
 export const PLATAFORMAS: Plataforma[] = [
   { id: 'inhire', nome: 'InHire', sigla: 'ih', cor: 'bg-purple', disponivel: true },
   { id: 'linkedin', nome: 'LinkedIn', sigla: 'in', cor: 'bg-blue-deep', disponivel: false },
@@ -8,7 +8,7 @@ export const PLATAFORMAS: Plataforma[] = [
   { id: 'catho', nome: 'Catho', sigla: 'ca', cor: 'bg-orange-deep', disponivel: false },
   { id: 'infojobs', nome: 'InfoJobs', sigla: 'ij', cor: 'bg-blue-dark', disponivel: false },
   { id: 'vagas', nome: 'Vagas.com', sigla: 'vg', cor: 'bg-green-deep', disponivel: false },
-  { id: 'indeed', nome: 'Indeed', sigla: 'id', cor: 'bg-side-top', disponivel: false },
+  { id: 'indeed', nome: 'Indeed', sigla: 'id', cor: 'bg-side-top', disponivel: true },
   { id: 'glassdoor', nome: 'Glassdoor', sigla: 'gd', cor: 'bg-green-deep', disponivel: false },
   { id: 'trampos', nome: 'Trampos.co', sigla: 'tr', cor: 'bg-orange-deep', disponivel: false },
 ];

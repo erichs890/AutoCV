@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Arquivo, Estado } from '../src/types.ts';
 import './platforms/inhire/index.ts';
+import { entrarNoIndeed } from './platforms/indeed/index.ts';
 import { PORTA, DIRS } from './config.ts';
 import { eventos, emitir, type Evento } from './events.ts';
 import { apagarTudo, kv, log, vagas } from './storage/db.ts';
@@ -18,7 +19,7 @@ import { salvarIA, testarIA } from './ia.ts';
 import { adicionarEmpresa, importarSeed, migrarTenantsAntigos, salvarDescoberta } from './platforms/inhire/discovery.ts';
 import { empresas } from './storage/db.ts';
 
-const SCORE_VERSAO = 3; // suba ao mudar calcularScore: as vagas abertas são repontuadas ao iniciar
+const SCORE_VERSAO = 4; // suba ao mudar calcularScore: as vagas abertas são repontuadas ao iniciar
 import { buscarEmpresas } from './queue.ts';
 
 const registrar = log.registrar;
@@ -62,12 +63,25 @@ const rotas: Record<string, (req: IncomingMessage, res: ServerResponse, url: URL
   'POST /estado': async (req, res) => {
     const parcial = JSON.parse((await corpo(req)).toString('utf8')) as Partial<Estado>;
     const antes = ler.automacao();
-    const cidadeAntes = ler.perfil()?.cidade ?? '';
+    const localAntes = JSON.stringify(ler.localizacao());
     salvarParcial(parcial);
     const a = parcial.automacao;
     const filtrosMudaram = a && (a.area !== antes.area || a.cargo !== antes.cargo || a.senioridade !== antes.senioridade || a.scoreMinimo !== antes.scoreMinimo);
-    if (filtrosMudaram || (parcial.perfil && (parcial.perfil.cidade ?? '') !== cidadeAntes)) repontuar();
+    if (filtrosMudaram || (parcial.perfil && JSON.stringify(ler.localizacao()) !== localAntes)) repontuar();
     json(res, 200, montarEstado());
+  },
+  // Indeed: login manual na janela do robô (o AutoCV não vê nem guarda a senha); só então a plataforma fica conectada
+  'POST /indeed/entrar': async (_req, res) => {
+    try {
+      const entrou = await entrarNoIndeed(registrar);
+      if (!entrou) return json(res, 400, { erro: 'Não detectei o login no Indeed (tempo esgotado ou janela fechada). Tente de novo.' });
+      const automacao = ler.automacao();
+      salvarParcial({ conexoes: { ...ler.conexoes(), indeed: { conectadaEm: new Date().toISOString() } }, automacao: { ...automacao, plataformas: Array.from(new Set([...automacao.plataformas, 'indeed'])) } });
+      registrar('sucesso', 'Indeed conectado: a sessão fica no perfil do navegador do robô.');
+      json(res, 200, { ok: true });
+    } catch (e) {
+      json(res, 400, { erro: (e as Error).message });
+    }
   },
   'POST /log': async (req, res) => {
     const { tipo, msg } = JSON.parse((await corpo(req)).toString('utf8'));
@@ -99,7 +113,7 @@ const rotas: Record<string, (req: IncomingMessage, res: ServerResponse, url: URL
   },
   'POST /buscar': async (_r, res) => {
     // Varredura forçada; roda em segundo plano e o front acompanha por eventos/log
-    void buscarVagas().catch(e => registrar('erro', `Varredura falhou: ${(e as Error).message}`));
+    void buscarVagas(true).catch(e => registrar('erro', `Varredura falhou: ${(e as Error).message}`));
     json(res, 200, { ok: true });
   },
   'POST /empresas': async (req, res) => {
