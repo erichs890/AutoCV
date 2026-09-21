@@ -15,6 +15,17 @@ export const PLATAFORMAS: Plataforma[] = [
   },
 
   {
+    id: 'vagaspj',
+    regiao: 'brasil',
+    nome: 'Vagas PJ',
+    sigla: 'pj',
+    cor: 'bg-blue-deep',
+    disponivel: true,
+    site: 'https://www.vagaspj.com.br/buscar-vagas',
+    nota: 'Só vagas de contratação PJ. Sem login: a lista vem do feed público e a candidatura é um formulário curto no próprio site.',
+  },
+
+  {
     id: 'linkedin',
     regiao: 'global',
     nome: 'LinkedIn',

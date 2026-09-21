@@ -45,6 +45,7 @@ export const INDEED = {
     proximo: /^(continuar|continue|pr[óo]ximo|next|avan[çc]ar|revisar( a| sua)? candidatura|review( your)? application)$/i,
     final: /enviar (sua |a )?candidatura|submit (your )?application|enviar candidatura/i,
     sucesso: /(sua )?candidatura (foi )?enviada|your application has been submitted|application submitted|candidatura conclu[ií]da/i,
+    nome: 'o Indeed',
   },
 };
 

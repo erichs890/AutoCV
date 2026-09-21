@@ -10,6 +10,7 @@ import { empresas } from './storage/db.ts';
 import { calcularScore } from './resume/score.ts';
 import { vagaCompativelComLocalizacao } from './localizacao.ts';
 import { indeedVencido } from './platforms/indeed/busca.ts';
+import { vagaspjVencido } from './platforms/vagaspj/busca.ts';
 import { inferirSenioridade } from './resume/analyzer.ts';
 import { esperaDaTentativa, falhaRepetivel, MAX_TENTATIVAS } from './falhas.ts';
 import { fecharNavegador } from './browser.ts';
@@ -518,6 +519,9 @@ export function iniciarLaco() {
           await buscarVagas().catch(e => registrar('erro', `Varredura agendada falhou: ${(e as Error).message}`));
         } else if (ler.conexoes().indeed && indeedVencido() && ler.curriculos()[0]?.perfilBusca) {
           // Só o Indeed conectado (ou o InHire em dia): a varredura diária dele não depende da do InHire
+          await buscarVagas().catch(e => registrar('erro', `Varredura agendada falhou: ${(e as Error).message}`));
+        } else if (ler.conexoes().vagaspj && vagaspjVencido(d.intervaloHoras) && ler.curriculos()[0]?.perfilBusca) {
+          // Idem para o Vagas PJ: quem está conectado sozinho também precisa que a varredura role
           await buscarVagas().catch(e => registrar('erro', `Varredura agendada falhou: ${(e as Error).message}`));
         }
       } finally {

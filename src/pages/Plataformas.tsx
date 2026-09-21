@@ -18,9 +18,13 @@ export default function Plataformas() {
   const vagasAtivas = estado.vagas.filter(v => v.plataforma === 'inhire' && !['encerrada'].includes(v.status)).length;
   const vagasPorEmpresa = (sub: string) => estado.vagas.filter(v => v.tenant === sub && v.status !== 'encerrada').length;
 
-  async function conectar() {
-    // `conexoes` é a única fonte de verdade de plataforma ligada (o core lê dela; `automacao.plataformas` era um espelho que podia divergir)
-    await salvar({ conexoes: { ...estado.conexoes, inhire: { conectadaEm: conexaoInhire?.conectadaEm ?? new Date().toISOString() } } });
+  // `conexoes` é a única fonte de verdade de plataforma ligada (o core lê dela; `automacao.plataformas` era um espelho que podia divergir)
+  async function conectar(id = 'inhire') {
+    await salvar({ conexoes: { ...estado.conexoes, [id]: { conectadaEm: estado.conexoes[id]?.conectadaEm ?? new Date().toISOString() } } });
+    if (id !== 'inhire') {
+      registrar('sucesso', `${PLATAFORMAS.find(p => p.id === id)?.nome ?? id} conectado: a próxima varredura já traz as vagas de lá.`);
+      return;
+    }
     const { total } = await post<{ total: number }>('/empresas/seed');
     registrar('sucesso', `InHire conectado: ${total} empresa(s) monitoradas.`);
   }
@@ -29,7 +33,14 @@ export default function Plataformas() {
     // `conexoes` é a única fonte de verdade de plataforma ligada
     const { [id]: _fora, ...resto } = estado.conexoes;
     await salvar({ conexoes: resto });
-    registrar('alerta', id === 'inhire' ? 'InHire desconectado (a lista de empresas foi mantida).' : 'Indeed desconectado (a sessão continua no navegador do robô até você sair por lá).');
+    registrar(
+      'alerta',
+      id === 'inhire'
+        ? 'InHire desconectado (a lista de empresas foi mantida).'
+        : id === 'indeed'
+          ? 'Indeed desconectado (a sessão continua no navegador do robô até você sair por lá).'
+          : `${PLATAFORMAS.find(p => p.id === id)?.nome ?? id} desconectado (as vagas já encontradas continuam na lista).`,
+    );
   }
 
   // Indeed: o login é feito por você na janela do robô; o AutoCV não vê nem guarda a senha
@@ -65,7 +76,7 @@ export default function Plataformas() {
       <div className="rounded-lg border border-panel-border bg-panel px-3 py-[9px]">
         <p className="text-[13px] font-bold">
           {conectadas} {conectadas === 1 ? 'plataforma conectada' : 'plataformas conectadas'}{' '}
-          <span className="text-xs font-normal text-ink-soft">• InHire e Indeed disponíveis; as outras chegam como plugins</span>
+          <span className="text-xs font-normal text-ink-soft">• InHire, Indeed e Vagas PJ disponíveis; as outras chegam como plugins</span>
         </p>
       </div>
 
@@ -112,7 +123,11 @@ export default function Plataformas() {
                           ? conexao
                             ? `${estado.vagas.filter(v => v.plataforma === 'indeed' && v.status !== 'encerrada').length} vagas com candidatura simplificada · o robô usa janela visível`
                             : 'Só vagas com "Candidatar-se facilmente". Você entra na sua conta numa janela do robô; o AutoCV não vê a senha. O Indeed bloqueia navegador oculto, então a janela sempre aparece.'
-                          : (p.nota ?? 'Integração ainda não implementada.')}
+                          : p.id === 'vagaspj'
+                            ? conexao
+                              ? `${estado.vagas.filter(v => v.plataforma === 'vagaspj' && v.status !== 'encerrada').length} vagas PJ acompanhadas · candidatura no próprio site`
+                              : 'Vagas de contratação PJ, sem login. A lista vem do feed público do site e o formulário de candidatura é curto (nome, WhatsApp, e-mail, LinkedIn, tipo de CNPJ e o PDF).'
+                            : (p.nota ?? 'Integração ainda não implementada.')}
                     </p>
                     {p.id === 'indeed' && entrando && (
                       <p role="status" className="text-[11px] font-bold text-amber-ink">
@@ -141,7 +156,7 @@ export default function Plataformas() {
                           type="button"
                           className="btn btn-success btn-sm w-full"
                           disabled={!p.disponivel || (p.id === 'indeed' && entrando)}
-                          onClick={p.id === 'indeed' ? conectarIndeed : conectar}
+                          onClick={p.id === 'indeed' ? conectarIndeed : () => conectar(p.id)}
                         >
                           <Plug size={14} aria-hidden />
                           {!p.disponivel ? 'Indisponível' : p.id === 'indeed' ? (entrando ? 'Aguardando login...' : 'Entrar e conectar') : 'Conectar'}

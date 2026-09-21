@@ -3,9 +3,17 @@
 // que é convenção da plataforma: como reconhecer os campos fixos, os botões de navegação e a confirmação.
 
 // name= dos campos fixos → papel que o robô sabe preencher. Qualquer outro campo é "pergunta extra".
-export type PapelFixo = 'nome' | 'email' | 'celular' | 'cpf' | 'linkedin' | 'pretensao' | 'pais' | 'cidade' | 'cep' | 'modelo' | 'regime' | 'indicacao' | 'curriculo' | 'termos' | 'ignorar';
+// O motor (formulario.ts) é usado por todas as plataformas, então este dicionário também é: além dos name= do
+// InHire, ele guarda os nomes óbvios de formulário em português que outros sites usam (telefone, linkedin, pdf).
+export type PapelFixo = 'nome' | 'email' | 'celular' | 'cpf' | 'linkedin' | 'pretensao' | 'pais' | 'cidade' | 'cep' | 'modelo' | 'regime' | 'indicacao' | 'curriculo' | 'cnpj' | 'termos' | 'ignorar';
 export const CAMPO_FIXO: Record<string, PapelFixo> = {
   name: 'nome',
+  // Vagas PJ (e formulários em português em geral)
+  telefone: 'celular',
+  whatsapp: 'celular',
+  linkedin: 'linkedin',
+  pdf: 'curriculo',
+  tipocnpj: 'cnpj',
   email: 'email',
   cpf: 'cpf',
   document: 'cpf',
@@ -30,7 +38,7 @@ export const CAMPO_FIXO: Record<string, PapelFixo> = {
 export const ROTULO_FIXO: [RegExp, PapelFixo][] = [
   [/nome completo/i, 'nome'],
   [/^(seu )?(melhor )?e-?mail/i, 'email'],
-  [/celular|telefone/i, 'celular'],
+  [/celular|telefone|whatsapp|whats app/i, 'celular'],
   // CPF em qualquer ponto do rótulo: além do campo padrão, empresas perguntam em texto livre
   // ("Coloque aqui o seu CPF" — QI Tech, 20/09/2026). Exceções em CPF_DE_TERCEIRO.
   [/\bcpf\b/i, 'cpf'],
@@ -42,6 +50,13 @@ export const ROTULO_FIXO: [RegExp, PapelFixo][] = [
   [/anexar curr|curr[ií]culo|resume/i, 'curriculo'],
   [/pol[ií]tica de privacidade|termos de uso|li e concordo/i, 'termos'],
 ];
+
+/**
+ * Tipo de CNPJ (MEI/ME/não tenho): dado da vida da pessoa que o currículo não traz e que muda o enquadramento
+ * da contratação — o robô nunca escolhe por ela. Rótulo fixo de propósito: assim a resposta é dada uma vez e
+ * vale para todas as vagas PJ seguintes, em vez de virar uma pergunta nova a cada formulário.
+ */
+export const PERGUNTA_CNPJ = 'Tipo do seu CNPJ (para vagas PJ)';
 
 /**
  * "CPF do responsável", "CPF da empresa", "CPF do cônjuge": o dado é de outra pessoa, não do candidato.

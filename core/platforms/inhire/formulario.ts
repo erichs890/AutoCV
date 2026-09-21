@@ -9,7 +9,7 @@ import type { PerguntaExtra } from '../../../src/types.ts';
 import { PERGUNTA_CIDADE, PERGUNTA_CPF, type DadosCandidatura, type Log, type ResultadoCandidatura } from '../adapter.ts';
 import { normalizar, similaridade } from '../../resume/texto.ts';
 import { lerLocal, vagaCompativelComLocalizacao } from '../../localizacao.ts';
-import { BOTAO_ANEXAR, BOTAO_FINAL, BOTAO_PROXIMO, CAMPO_FIXO, CPF_DE_TERCEIRO, ROTULO_FIXO, SEQUENCIAL, SUCESSO, type PapelFixo } from './selectors.ts';
+import { BOTAO_ANEXAR, BOTAO_FINAL, BOTAO_PROXIMO, CAMPO_FIXO, CPF_DE_TERCEIRO, PERGUNTA_CNPJ, ROTULO_FIXO, SEQUENCIAL, SUCESSO, type PapelFixo } from './selectors.ts';
 
 export type Raiz = Page | Frame;
 export type TipoCampo = 'texto' | 'textarea' | 'arquivo' | 'radio' | 'checkbox' | 'grupo' | 'select' | 'dropdown' | 'desconhecido';
@@ -22,6 +22,7 @@ export interface CampoDom {
   obrigatorio: boolean;
   opcoes: string[]; // radio/grupo/select; dropdown só depois de aberto
   preenchido: boolean;
+  subtipo?: string; // type= do <input> ("url", "tel", "email"...): alguns exigem formato, como o LinkedIn em url
   html: string; // trecho para diagnóstico
 }
 
@@ -123,7 +124,7 @@ export async function descobrirCampos(raiz: Raiz): Promise<CampoDom[]> {
       el.removeAttribute('data-autocv-opcao');
     }
     const raizForm = document.querySelector('form') ?? document.body;
-    const saida: { i: number; tipo: string; nome: string; rotulo: string; obrigatorio: boolean; opcoes: string[]; preenchido: boolean; html: string }[] = [];
+    const saida: { i: number; tipo: string; nome: string; rotulo: string; obrigatorio: boolean; opcoes: string[]; preenchido: boolean; subtipo?: string; html: string }[] = [];
     let n = 0;
     const marcar = (el: Element) => {
       el.setAttribute('data-autocv', String(n));
@@ -140,16 +141,26 @@ export async function descobrirCampos(raiz: Raiz): Promise<CampoDom[]> {
       if (!visivel(dd)) continue;
       const interno = dd.querySelector('input');
       if (interno) vistos.add(interno);
+      // Widget que só enfeita um <select> nativo (custom-select.js do Vagas PJ deixa o original no DOM, invisível):
+      // é o nativo que carrega name=, required e as opções. Sem ler dele, o campo vira uma pergunta anônima e
+      // opcional — e um campo obrigatório que o robô resolveria sozinho acaba parando a candidatura.
+      const nativo = (dd.querySelector('select[name]') ?? dd.parentElement?.querySelector('select[name]')) as HTMLSelectElement | null;
+      if (nativo) vistos.add(nativo);
       const bruto = rotuloBruto(dd);
       const conteudo = dd.querySelector('.react-dropdown-select-content')?.textContent?.trim() ?? '';
-      const preenchido = (interno?.value ?? '') !== '' || (conteudo !== '' && !/^(selecione|informe|pesquise|escolha|selecionar|search|select)/i.test(conteudo));
+      const preenchido = nativo ? nativo.value !== '' : (interno?.value ?? '') !== '' || (conteudo !== '' && !/^(selecione|informe|pesquise|escolha|selecionar|search|select)/i.test(conteudo));
       saida.push({
         i: marcar(dd),
         tipo: 'dropdown',
-        nome: interno?.getAttribute('name') ?? '',
+        nome: nativo?.getAttribute('name') ?? interno?.getAttribute('name') ?? '',
         rotulo: limpar(bruto),
-        obrigatorio: /\*/.test(bruto),
-        opcoes: [],
+        obrigatorio: /\*/.test(bruto) || nativo?.required === true || dd.getAttribute('aria-required') === 'true',
+        opcoes: nativo
+          ? [...nativo.options]
+              .filter(op => !op.disabled)
+              .map(op => op.text.trim())
+              .filter(Boolean)
+          : [],
         preenchido,
         html: dd.outerHTML.slice(0, 400),
       });
@@ -182,11 +193,28 @@ export async function descobrirCampos(raiz: Raiz): Promise<CampoDom[]> {
       if (el.tagName === 'SELECT') {
         if (!el.closest('form')) continue; // seletor de idioma do topo
         const sel = el as HTMLSelectElement;
-        saida.push({ i: marcar(el), tipo: 'select', ...base, opcoes: [...sel.options].map(o => o.text.trim()).filter(Boolean), preenchido: sel.value !== '' && sel.selectedIndex > 0 });
+        // `disabled` cobre o rótulo-placeholder ("Tipo do CNPJ (MEI ou ME)"): não é resposta, não pode ser oferecido
+        saida.push({
+          i: marcar(el),
+          tipo: 'select',
+          ...base,
+          opcoes: [...sel.options]
+            .filter(o => !o.disabled)
+            .map(o => o.text.trim())
+            .filter(Boolean),
+          preenchido: sel.value !== '' && sel.selectedIndex > 0,
+        });
         continue;
       }
       // "+55 " no celular é só o prefixo da máscara, não um valor
-      saida.push({ i: marcar(el), tipo: el.tagName === 'TEXTAREA' ? 'textarea' : 'texto', ...base, opcoes: [], preenchido: input.value.trim() !== '' && !/^\+\d{1,3}\s*$/.test(input.value) });
+      saida.push({
+        i: marcar(el),
+        tipo: el.tagName === 'TEXTAREA' ? 'textarea' : 'texto',
+        ...base,
+        subtipo: type,
+        opcoes: [],
+        preenchido: input.value.trim() !== '' && !/^\+\d{1,3}\s*$/.test(input.value),
+      });
     }
 
     // Rádios agrupados por name: o rótulo é a pergunta do grupo, as opções são os rótulos de cada rádio
@@ -236,7 +264,7 @@ export async function descobrirCampos(raiz: Raiz): Promise<CampoDom[]> {
       });
       saida.push({ i, tipo: 'grupo', nome: lista[0].name, rotulo: limpar(bruto), obrigatorio: /\*/.test(bruto), opcoes, preenchido: lista.some(cb => cb.checked), html: cont.outerHTML.slice(0, 400) });
     }
-    return saida as { i: number; tipo: TipoCampo; nome: string; rotulo: string; obrigatorio: boolean; opcoes: string[]; preenchido: boolean; html: string }[];
+    return saida as { i: number; tipo: TipoCampo; nome: string; rotulo: string; obrigatorio: boolean; opcoes: string[]; preenchido: boolean; subtipo?: string; html: string }[];
   }) as Promise<CampoDom[]>;
 }
 
@@ -277,6 +305,18 @@ export type Resolucao =
   | { acao: 'marcar' }
   | { acao: 'pular'; motivo: string }
   | { acao: 'pergunta'; pergunta: PerguntaExtra };
+
+/**
+ * LinkedIn num campo `type="url"`: o navegador recusa "linkedin.com/in/fulano" sem esquema e o formulário nem
+ * envia (Vagas PJ ainda exige `pattern` com linkedin.com/in). Em campo de texto comum o valor vai como está —
+ * o InHire guarda só o usuário em `linkedinUsername`.
+ */
+export function urlDoLinkedin(valor: string): string {
+  const v = valor.trim();
+  if (/^https?:\/\//i.test(v)) return v;
+  if (/linkedin\.com/i.test(v)) return `https://${v.replace(/^\/+/, '')}`;
+  return `https://www.linkedin.com/in/${v.replace(/^\/+|\/+$/g, '')}`;
+}
 
 export function papelDe(campo: Pick<CampoDom, 'nome' | 'rotulo' | 'tipo'>): PapelFixo | null {
   if (campo.nome && CAMPO_FIXO[campo.nome]) return CAMPO_FIXO[campo.nome];
@@ -347,7 +387,8 @@ export function resolverCampo(campo: CampoDom, dados: DadosCandidatura): Resoluc
         ? { acao: 'valor', valor: dados.cpf.replace(/\D/g, ''), mascarado: true }
         : { acao: 'pergunta', pergunta: { rotulo: PERGUNTA_CPF, tipo: 'texto' } };
     case 'linkedin':
-      return dados.linkedin ? { acao: 'valor', valor: dados.linkedin } : extra('texto');
+      if (!dados.linkedin) return extra('texto');
+      return { acao: 'valor', valor: campo.subtipo === 'url' ? urlDoLinkedin(dados.linkedin) : dados.linkedin };
     case 'pretensao':
       return dados.pretensao ? { acao: 'valor', valor: pretensaoEmReais(dados.pretensao), mascarado: true } : extra('texto');
     case 'pais':
@@ -368,6 +409,12 @@ export function resolverCampo(campo: CampoDom, dados: DadosCandidatura): Resoluc
     }
     case 'curriculo':
       return { acao: 'arquivo' };
+    case 'cnpj': {
+      // Rótulo fixo: respondida uma vez, vale para todas as vagas PJ seguintes
+      const pergunta: PerguntaExtra = { rotulo: PERGUNTA_CNPJ, tipo: 'opcoes', opcoes: campo.opcoes.length ? campo.opcoes : ['MEI', 'ME', 'Não tenho'], obrigatoria: true };
+      const salva = dados.responder(pergunta);
+      return salva !== null ? { acao: 'valor', valor: salva } : { acao: 'pergunta', pergunta };
+    }
     case 'termos':
       return { acao: 'marcar' };
     default:
@@ -552,8 +599,9 @@ export interface Convencoes {
   proximo: RegExp;
   final: RegExp;
   sucesso: RegExp;
+  nome?: string; // como a plataforma é citada nas mensagens, com artigo: "o InHire", "o Vagas PJ"
 }
-const CONVENCOES_INHIRE: Convencoes = { proximo: BOTAO_PROXIMO, final: BOTAO_FINAL, sucesso: SUCESSO };
+const CONVENCOES_INHIRE: Convencoes = { proximo: BOTAO_PROXIMO, final: BOTAO_FINAL, sucesso: SUCESSO, nome: 'o InHire' };
 
 /**
  * Botão de avançar/enviar da etapa. Duas sutilezas do InHire real:
@@ -997,6 +1045,12 @@ export interface OpcoesFormulario {
    * nunca reportamos erro depois de um envio comprovado, e nunca clicamos no botão final de novo.
    */
   envioComprovado?: () => boolean;
+  /**
+   * Tela que se intromete entre o clique no botão final e o envio de verdade. No Vagas PJ o clique em "Candidatar"
+   * é interceptado por um anúncio ("Receba as vagas por WhatsApp") e o POST só sai quando se dispensa o anúncio.
+   * Roda logo depois do clique; se lançar, a mensagem vira o motivo do erro.
+   */
+  aposBotaoFinal?: (page: Page, log: Log) => Promise<void>;
 }
 
 export async function executarFormulario(page: Page, dados: DadosCandidatura, log: Log, opcoes: OpcoesFormulario = {}): Promise<Resultado> {
@@ -1009,12 +1063,13 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
   // Depois de um envio comprovado pela rede, nenhum desvio de layout pode virar "erro": a candidatura existe lá.
   const saidaErro = (motivo: string): Resultado => {
     if (comprovado()) {
-      log('alerta', `A tela não confirmou (${motivo}), mas a candidatura foi aceita pelo InHire (resposta da API de envio). Contando como enviada.`);
+      log('alerta', `A tela não confirmou (${motivo}), mas a candidatura foi aceita (resposta da rota de envio). Contando como enviada.`);
       return enviada();
     }
     return { resultado: { status: 'erro', motivo }, etapas, perguntasRespondidas, typeform };
   };
   const conv = opcoes.convencoes ?? CONVENCOES_INHIRE;
+  const quem = conv.nome ?? 'a plataforma';
   const sucessoNaTela = async () => conv.sucesso.test(await page.evaluate(() => document.body.innerText).catch(() => ''));
 
   for (let etapa = 1; etapa <= MAX_ETAPAS; etapa++) {
@@ -1040,7 +1095,7 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
           if (await sucessoNaTela()) return true;
           if (comprovado()) return true; // questionário terminado + envio aceito pela API = acabou
           if ((await detectarModo(page)).modo === 'sequencial') return false;
-          return (await descobrirCampos(page)).length > 0 || (await acharBotao(page)) !== null;
+          return (await descobrirCampos(page)).length > 0 || (await acharBotao(page, conv)) !== null;
         },
         25000,
         500,
@@ -1090,7 +1145,7 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
     }
     etapas.push(registro);
 
-    const botao = await acharBotao(page);
+    const botao = await acharBotao(page, conv);
     if (!botao) return saidaErro('não achei o botão para avançar ou enviar nesta etapa');
     if (!(await ate(() => habilitado(botao.loc), 10000))) {
       // Diagnóstico útil: qual campo obrigatório ficou vazio (o InHire raramente diz)
@@ -1100,16 +1155,16 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
         .filter(Boolean);
       const erros = await errosVisiveis(page);
       const detalhe = faltando.length ? `falta preencher: ${faltando.slice(0, 6).join(', ')}` : erros.length ? erros.join(' · ') : 'algum campo obrigatório ficou inválido ou vazio';
-      return saidaErro(`o InHire não liberou "${botao.texto}": ${detalhe}`);
+      return saidaErro(`${quem} não liberou "${botao.texto}": ${detalhe}`);
     }
 
     if (botao.final) {
       // Trava anti-duplicidade: se a candidatura já foi aceita pela API, nunca clicamos no botão final de novo
       if (comprovado()) {
-        log('alerta', `"${botao.texto}" reapareceu depois de um envio já aceito pelo InHire; não vou clicar de novo.`);
+        log('alerta', `"${botao.texto}" reapareceu depois de um envio já aceito por ${quem}; não vou clicar de novo.`);
         return enviada();
       }
-      if (talentoCriado) return saidaErro(`o InHire voltou a mostrar "${botao.texto}" depois do envio; parei para não candidatar duas vezes`);
+      if (talentoCriado) return saidaErro(`${quem} voltou a mostrar "${botao.texto}" depois do envio; parei para não candidatar duas vezes`);
       // Em ensaio, o botão final só é clicado quando ele apenas abre o questionário (fluxo condicional); o POST de
       // criação do talento está abortado pelo navegador de qualquer forma (index.ts)
       if (dados.ensaio && !opcoes.fluxoCondicional) return { resultado: { status: 'ensaio', captura: '', pronto: true }, etapas, perguntasRespondidas, typeform };
@@ -1117,6 +1172,7 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
       if (!opcoes.fluxoCondicional) talentoCriado = true;
       const antes = assinatura(await descobrirCampos(page).catch(() => []));
       await botao.loc.click();
+      await opcoes.aposBotaoFinal?.(page, log);
       // Depois do envio: confirmação, questionário sequencial (iframe/nativo) ou mais campos do InHire
       let desfecho: 'sucesso' | 'sequencial' | 'campos' | null = null;
       await ate(
@@ -1136,12 +1192,12 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
       if (desfecho === 'sequencial' || desfecho === 'campos') continue; // o topo do laço detecta o modo e segue
       // Nada mudou na tela. Se a API aceitou o envio, acabou bem — o InHire só não trocou a mensagem.
       if (comprovado()) {
-        log('alerta', 'O InHire aceitou a candidatura pela API, mas não trocou a mensagem da tela. Contando como enviada.');
+        log('alerta', 'O envio foi aceito pela rota de candidatura, mas a tela não trocou a mensagem. Contando como enviada.');
         return enviada();
       }
       const texto = await page.evaluate(() => document.body.innerText).catch(() => '');
-      if (/captcha|rob[ôo]|robot|verifica[çc][ãa]o de seguran/i.test(texto)) return saidaErro('o InHire pediu verificação (captcha); envie esta vaga manualmente');
-      return saidaErro('sem confirmação do InHire após o envio');
+      if (/captcha|rob[ôo]|robot|verifica[çc][ãa]o de seguran/i.test(texto)) return saidaErro(`${quem} pediu verificação (captcha); envie esta vaga manualmente`);
+      return saidaErro(`sem confirmação de ${quem} após o envio`);
     }
 
     // Próxima etapa: clica e espera o conjunto de campos mudar

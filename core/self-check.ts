@@ -662,5 +662,89 @@ assert.ok(similaridade('Nível de inglês', 'Qual seu nível de inglês?') > 0.5
 assert.ok(similaridade('Possui CNH?', 'Pretensão salarial') < 0.4);
 console.log('✓ Similaridade de perguntas');
 
+// 7) Vagas PJ: feed, JSON-LD da página e as convenções do formulário (levantados em 21/09/2026 no site real)
+const { lerFeed, lerJobPosting, localDe, modeloDe: modeloPJ, montarVaga } = await import('./platforms/vagaspj/busca.ts');
+const { motivoDoErro } = await import('./platforms/vagaspj/index.ts');
+const { VAGASPJ } = await import('./platforms/vagaspj/seletores.ts');
+
+const FEED = `<?xml version="1.0"?><rss><channel><title>Vagas PJ</title>
+<item><title>Desenvolvedor Full Stack Pleno - PJ | Híbrido em Fortaleza/CE – Tecla T</title>
+<link>https://www.vagaspj.com.br/vagas/teclat/404042009/desenvolvedor-full-stack-pleno-pj</link>
+<pubDate>Mon, 21 Sep 2026 11:28:15 -0300</pubDate><description><![CDATA[Sobre o cliente...]]></description></item>
+<item><title>Videomaker / Criador(a) de Conteúdo – Instituto Gozzano</title>
+<link>https://www.vagaspj.com.br/vagas/gozzano/404042004/videomaker</link></item>
+<item><title>Página que não é vaga</title><link>https://www.vagaspj.com.br/empresas/teclat</link></item>
+</channel></rss>`;
+const itens = lerFeed(FEED);
+assert.equal(itens.length, 2, 'só entram links de /vagas/<empresa>/<id>/');
+assert.deepEqual({ id: itens[0].id, empresaSlug: itens[0].empresaSlug }, { id: '404042009', empresaSlug: 'teclat' });
+assert.ok(itens[1].titulo.includes('Videomaker / Criador(a)'), `a barra escapada do feed volta ao normal: ${itens[1].titulo}`);
+
+const paginaPJ = (jp: object, extra = '') =>
+  `<html><body>${extra}<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@graph': [{ '@type': 'BreadcrumbList' }, { '@type': 'JobPosting', ...jp }] })}</script></body></html>`;
+const ENDERECO_FOR = { address: { '@type': 'PostalAddress', addressLocality: 'Fortaleza', addressRegion: 'CE', addressCountry: 'BR' } };
+assert.equal(lerJobPosting('<html><body>sem dados</body></html>'), null);
+assert.equal(lerJobPosting(paginaPJ({ title: 'X' }))?.title, 'X', 'o JobPosting vem de dentro do @graph');
+assert.equal(localDe({ jobLocation: ENDERECO_FOR }), 'Fortaleza - CE');
+assert.equal(localDe({}), '');
+assert.equal(modeloPJ({ jobLocationType: 'TELECOMMUTE' }, 'Dev', ''), 'remoto');
+assert.equal(modeloPJ({ jobLocation: ENDERECO_FOR }, 'Dev Pleno - PJ | Híbrido em Fortaleza/CE', ''), 'hibrido', 'híbrido só aparece escrito, nunca no JSON-LD');
+assert.equal(modeloPJ({ jobLocation: ENDERECO_FOR }, 'Dev', ''), 'presencial');
+assert.equal(modeloPJ({}, 'Dev', ''), 'indefinido', 'sem endereço e sem marca não invento presencial');
+
+const itemPJ = { id: '404042009', empresaSlug: 'teclat', url: 'https://www.vagaspj.com.br/vagas/teclat/404042009/dev', titulo: 'Dev – Tecla T' };
+const cfgPJ = { area: '', senioridade: '', scoreMinimo: 30 } as unknown as Parameters<typeof montarVaga>[3];
+const soRemotas = { localizacaoPresencial: 'Fortaleza - CE', paisesRemoto: ['Brasil'] };
+const BASE_JP = { title: 'Desenvolvedor Back-end Júnior', description: '<p>Java, <b>Spring</b> Boot e SQL</p>', hiringOrganization: { name: 'Tecla T' } };
+assert.equal(montarVaga(itemPJ, paginaPJ({ ...BASE_JP }, '<a data-externa="1">Candidatar no site</a>'), perfil, cfgPJ, soRemotas), null, 'candidatura em outro site não entra');
+assert.equal(montarVaga(itemPJ, paginaPJ({ ...BASE_JP, validThrough: '2020-01-01T00:00:00-03:00' }), perfil, cfgPJ, soRemotas), null, 'vaga vencida não entra');
+assert.equal(montarVaga(itemPJ, '<html>sem json-ld</html>', perfil, cfgPJ, soRemotas), null);
+const remotaPJ = montarVaga(itemPJ, paginaPJ({ ...BASE_JP, jobLocationType: 'TELECOMMUTE' }), perfil, cfgPJ, soRemotas)!;
+assert.equal(remotaPJ.id, 'vagaspj:404042009');
+assert.equal(remotaPJ.regime, 'PJ', 'o site inteiro é PJ');
+assert.equal(remotaPJ.empresa, 'Tecla T');
+assert.equal(remotaPJ.modelo, 'remoto');
+assert.ok(remotaPJ.skills.includes('java') && !remotaPJ.descricao.includes('<b>'), 'descrição vira texto e as skills saem dela');
+assert.notEqual(remotaPJ.status, 'ignorada', 'remota compatível fica na lista');
+const presencialSP = montarVaga(itemPJ, paginaPJ({ ...BASE_JP, jobLocation: { address: { addressLocality: 'São Paulo', addressRegion: 'SP', addressCountry: 'BR' } } }), perfil, cfgPJ, soRemotas)!;
+assert.equal(presencialSP.status, 'ignorada', 'presencial fora do estado é cortada, como em qualquer plataforma');
+
+// Botões: o texto exato importa — "Candidatar agora" só abre o formulário, "Candidatar" envia
+assert.ok(VAGASPJ.convencoes.final.test('Candidatar'));
+assert.ok(!VAGASPJ.convencoes.final.test('Candidatar agora'), 'o botão que só revela o formulário não pode ser lido como envio');
+assert.ok(VAGASPJ.convencoes.proximo.test('Continuar') && !VAGASPJ.convencoes.proximo.test('Voltar'));
+assert.ok(!VAGASPJ.convencoes.proximo.test('Candidatar') && !VAGASPJ.convencoes.final.test('Continuar'));
+
+// POST que saiu sem resposta: não pode voltar sozinho para a fila (seria um segundo envio na mesma vaga)
+assert.equal(motivoDoErro('x', false, 'o Vagas PJ recusou o envio (HTTP 422)'), 'o Vagas PJ recusou o envio (HTTP 422)');
+assert.equal(motivoDoErro('timeout', false, ''), 'timeout');
+assert.ok(!falhaRepetivel(motivoDoErro('timeout', true, '')), 'envio sem resposta espera decisão do usuário');
+assert.ok(falhaRepetivel(motivoDoErro('timeout', false, '')), 'sem envio nenhum, pode tentar de novo');
+console.log('✓ Vagas PJ: feed, JSON-LD, corte por localização e travas de envio');
+
+// 8) Campos com nome em português e o LinkedIn em campo type=url
+const { urlDoLinkedin } = await import('./platforms/inhire/formulario.ts');
+assert.equal(papelDe({ nome: 'telefone', rotulo: 'Seu whatsapp (DDD+número)', tipo: 'texto' }), 'celular');
+assert.equal(papelDe({ nome: 'linkedin', rotulo: '', tipo: 'texto' }), 'linkedin');
+assert.equal(papelDe({ nome: 'pdf', rotulo: 'Arquivo', tipo: 'arquivo' }), 'curriculo');
+assert.equal(papelDe({ nome: 'tipocnpj', rotulo: '1 Dados', tipo: 'select' }), 'cnpj', 'o rótulo do Vagas PJ é lixo: quem decide é o name=');
+assert.equal(papelDe({ nome: '', rotulo: 'Seu WhatsApp', tipo: 'texto' }), 'celular');
+assert.equal(urlDoLinkedin('https://www.linkedin.com/in/ana'), 'https://www.linkedin.com/in/ana');
+assert.equal(urlDoLinkedin('linkedin.com/in/ana'), 'https://linkedin.com/in/ana');
+assert.equal(urlDoLinkedin('ana'), 'https://www.linkedin.com/in/ana');
+const comLinkedin = { ...dadosBase, linkedin: 'ana' };
+assert.deepEqual(resolverCampo(campo({ nome: 'linkedin', subtipo: 'url' }), comLinkedin), { acao: 'valor', valor: 'https://www.linkedin.com/in/ana' });
+assert.deepEqual(resolverCampo(campo({ nome: 'linkedinUsername' }), comLinkedin), { acao: 'valor', valor: 'ana' }, 'campo de texto comum leva o valor como está');
+const cnpj = resolverCampo(campo({ nome: 'tipocnpj', tipo: 'select', opcoes: ['MEI', 'ME', 'Não tenho'] }), dadosBase);
+assert.ok(cnpj.acao === 'pergunta', 'tipo de CNPJ nunca é escolhido pelo robô');
+assert.ok(cnpj.acao === 'pergunta' && cnpj.pergunta.rotulo.includes('CNPJ') && cnpj.pergunta.opcoes?.length === 3);
+const rotuloCnpj = cnpj.acao === 'pergunta' ? cnpj.pergunta.rotulo : '';
+assert.deepEqual(
+  resolverCampo(campo({ nome: 'tipocnpj', tipo: 'select', opcoes: ['MEI', 'ME'] }), { ...dadosBase, responder: (q: { rotulo: string }) => (q.rotulo === rotuloCnpj ? 'MEI' : null) }),
+  { acao: 'valor', valor: 'MEI' },
+  'respondida uma vez, vale para as próximas vagas PJ',
+);
+console.log('✓ Campos em português, LinkedIn em campo url e tipo de CNPJ');
+
 await fecharNavegador();
 console.log('\nTudo certo.');
