@@ -466,12 +466,13 @@ assert.ok(calcularScore({ titulo: 'Analista Administrativo', skills: ['sql'], de
 console.log('✓ Score: funcao diferente cai, vaga generica nao infla, filtro rigido corta mais');
 
 // Intervalo em segundos: o rotulo tem de ficar legivel nas quatro faixas usadas na tela
-const { textoIntervalo } = await import('./queue.ts');
+const { textoIntervalo } = await import('../src/dados.ts');
 assert.equal(textoIntervalo(10), '10 s');
 assert.equal(textoIntervalo(30), '30 s');
 assert.equal(textoIntervalo(60), '1 min');
 assert.equal(textoIntervalo(180), '3 min');
 assert.equal(textoIntervalo(90), '1 min 30 s');
+assert.equal(textoIntervalo(480), '8 min', 'valor migrado de minutos precisa de rótulo (era o que faltava no select)');
 console.log('✓ Intervalo entre candidaturas legivel em segundos e minutos');
 
 // Modo Sem Piedade: o que a IA devolve so passa se for curto, humano e (em lista) uma opcao real

@@ -14,7 +14,7 @@ import { inferirSenioridade } from './resume/analyzer.ts';
 import { esperaDaTentativa, falhaRepetivel, MAX_TENTATIVAS } from './falhas.ts';
 import { fecharNavegador } from './browser.ts';
 import { categoriaSensivel } from '../src/sensiveis.ts';
-import { perguntaSoDestaVaga } from '../src/dados.ts';
+import { perguntaSoDestaVaga, textoIntervalo } from '../src/dados.ts';
 
 const registrar = log.registrar;
 let ocupado = false; // uma candidatura por vez, sempre
@@ -24,9 +24,6 @@ function dentroDaJanela(janela: string) {
   const agora = new Date().toTimeString().slice(0, 5);
   return agora >= ini && agora <= fim;
 }
-
-/** "10 s", "1 min", "3 min": o intervalo virou segundos e as mensagens precisam acompanhar. */
-export const textoIntervalo = (s: number) => (s < 60 ? `${s} s` : s % 60 === 0 ? `${s / 60} min` : `${Math.floor(s / 60)} min ${s % 60} s`);
 
 function enviosHoje() {
   const hoje = new Date().toDateString();

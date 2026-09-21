@@ -27,7 +27,7 @@ import Modal from '../components/Modal';
 import { statusRobo } from '../components/Sidebar';
 import { useEstado, type ConfigAutomacao } from '../estado';
 import { post, urlArquivo } from '../api';
-import { MODELO, PLATAFORMAS, REGIMES, REGIME_VAGA, STATUS_VAGA, formatarTamanho, getPlataforma, perguntaSoDestaVaga } from '../dados';
+import { MODELO, PLATAFORMAS, REGIMES, REGIME_VAGA, STATUS_VAGA, formatarTamanho, getPlataforma, perguntaSoDestaVaga, textoIntervalo } from '../dados';
 
 const titulos = { ativo: 'Robô ligado', pausado: 'Robô parado', erro: 'Robô com erro' };
 const coresLog: Record<LinhaLog['tipo'], string> = { sucesso: 'text-aqua', info: 'text-white/85', aguardo: 'text-amber', erro: 'text-orange-light', alerta: 'text-amber' };
@@ -45,6 +45,16 @@ const INTERVALOS: [number, string][] = [
   [600, 'A cada 10 minutos'],
   [1800, 'A cada 30 minutos'],
 ];
+
+/**
+ * O valor gravado SEMPRE precisa existir como opção. Um `<select>` com valor fora da lista mostra a primeira
+ * opção enquanto o estado continua no valor antigo: o usuário vê "10 segundos", salva, e grava o de antes —
+ * foi o que aconteceu com os 480 s vindos da migração de minutos para segundos.
+ */
+function opcoesIntervalo(atual: number): [number, string][] {
+  if (INTERVALOS.some(([s]) => s === atual)) return INTERVALOS;
+  return [[atual, `A cada ${textoIntervalo(atual)} (atual)`], ...INTERVALOS];
+}
 
 const MODOS_PERGUNTA: { id: 'manual' | 'sem_piedade'; curto: string; titulo: string; texto: string; etiqueta?: string }[] = [
   {
@@ -398,7 +408,7 @@ export default function Automacao() {
                   <label>
                     <span className="label">Intervalo entre candidaturas</span>
                     <select value={cfg.intervaloSegundos} onChange={e => set({ intervaloSegundos: +e.target.value })} className="field">
-                      {INTERVALOS.map(([segundos, rotulo]) => (
+                      {opcoesIntervalo(cfg.intervaloSegundos).map(([segundos, rotulo]) => (
                         <option key={segundos} value={segundos}>
                           {rotulo}
                         </option>

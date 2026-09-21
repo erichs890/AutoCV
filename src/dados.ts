@@ -207,6 +207,9 @@ export function perguntaSoDestaVaga(rotulo: string, empresa = ''): boolean {
   return marcas.some(t => r.includes(t));
 }
 
+/** "10 s", "1 min", "8 min", "1 min 30 s": rótulo legível para uma espera em segundos. */
+export const textoIntervalo = (s: number) => (s < 60 ? `${s} s` : s % 60 === 0 ? `${s / 60} min` : `${Math.floor(s / 60)} min ${s % 60} s`);
+
 export const NIVEIS = ['Estágio', 'Júnior', 'Pleno', 'Sênior', 'Liderança'];
 export const AREAS = ['Tecnologia da Informação', 'Dados e Analytics', 'Suporte e Infraestrutura', 'Comercial e Vendas', 'Financeiro e Contábil', 'Recursos Humanos', 'Marketing', 'Administrativo'];
 export const REGIMES = [
