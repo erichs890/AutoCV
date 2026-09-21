@@ -12,6 +12,7 @@ import { vagaCompativelComLocalizacao } from './localizacao.ts';
 import { indeedVencido } from './platforms/indeed/busca.ts';
 import { inferirSenioridade } from './resume/analyzer.ts';
 import { esperaDaTentativa, falhaRepetivel, MAX_TENTATIVAS } from './falhas.ts';
+import { fecharNavegador } from './browser.ts';
 import { categoriaSensivel } from '../src/sensiveis.ts';
 import { perguntaSoDestaVaga } from '../src/dados.ts';
 
@@ -391,6 +392,21 @@ async function responderComIA(vaga: Vaga): Promise<boolean> {
   }
 }
 
+const ESPERA_CURTA_MS = 45_000;
+
+/**
+ * Fecha o navegador quando a fila vai ficar parada por um tempo.
+ *
+ * Sem isto, a janela do robô (com "Mostrar navegador" ligado) fica aberta em `about:blank` durante todo o
+ * intervalo entre uma candidatura e a próxima — parece travado, e ainda segura memória à toa. Espera curta
+ * não vale a pena: reabrir o perfil custa alguns segundos.
+ */
+async function liberarNavegador() {
+  const prox = ler.proximoEnvioEm();
+  const faltam = prox ? new Date(prox).getTime() - Date.now() : Number.POSITIVE_INFINITY;
+  if (faltam > ESPERA_CURTA_MS) await fecharNavegador();
+}
+
 let ultimaEspera = '';
 let rodando = false; // trabalhador da fila ativo (cobre o intervalo entre duas candidaturas)
 let pedidoForcado = false; // chegou um pedido manual enquanto o robô estava ocupado: roda assim que liberar
@@ -459,6 +475,7 @@ async function girarFila(forcar: boolean) {
     if (!forcarAgora) {
       const espera = motivoDeEspera(cfg);
       if (espera) {
+        await liberarNavegador();
         // Só avisa quando há fila de verdade e o motivo mudou (senão vira ruído a cada 20 s)
         if (vagas.proximaNaFila() && espera !== ultimaEspera) {
           registrar('info', `Fila parada: ${espera}.`);
@@ -469,7 +486,10 @@ async function girarFila(forcar: boolean) {
       ultimaEspera = '';
     }
     const proxima = vagas.proximaNaFila();
-    if (!proxima) return;
+    if (!proxima) {
+      await liberarNavegador();
+      return;
+    }
     if (cfg.ensaio) registrar('alerta', `Modo ensaio LIGADO: "${proxima.titulo}" será preenchida mas NÃO enviada. Desligue o ensaio em Automação para candidatar de verdade.`);
     if (!(await processarUma(proxima))) return;
     forcar = false; // um pedido manual libera uma candidatura; as seguintes respeitam os portões
@@ -517,6 +537,7 @@ export function iniciarLaco() {
 
 export function ligarRobo(ligar: boolean) {
   kv.set('robo', ligar ? 'ativo' : 'pausado');
+  if (!ligar) void fecharNavegador(); // pausou: a janela do robô não fica aberta à toa
   const cfg = ler.automacao();
   registrar(ligar ? 'sucesso' : 'alerta', ligar ? `Robô ligado em modo ${cfg.modo === 'automatico' ? 'automático' : 'manual'}.` : 'Robô pausado.');
   // Avisos que explicam "liguei o robô e nada acontece" antes de o usuário ficar esperando
