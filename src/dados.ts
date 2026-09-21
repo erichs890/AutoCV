@@ -2,6 +2,13 @@ import type { Plataforma, StatusVaga } from './types.ts';
 
 // Catálogo fixo do produto. InHire e Indeed têm adapter no núcleo; as outras ficam "Indisponível" até alguém
 // escrever o adapter (ver agentlog.md §5). `site` e `nota` ficam reservados aqui para quando chegar a vez delas.
+// Catálogo do produto: só plataformas em que vale a pena automatizar. O critério que decidiu a poda de
+// 21/09/2026 é um só — **a candidatura tem de acontecer dentro da plataforma**. Site que redireciona para o
+// formulário da empresa não tem "um adapter": tem um adapter por empresa, para sempre. Saíram daqui os
+// agregadores (Remotive, Working Nomads, JS Remotely, Glassdoor), os que cobram assinatura para candidatar
+// (Catho, FlexJobs), os que candidatam "com o perfil" em vez de PDF (Wellfound, PowerToFly), os que nem são
+// mural de vaga (Toptal, Job Hunt, Kickresume) e o LinkedIn — este último passa no critério, mas caça
+// automação com agressividade e o que se arrisca ali é a conta profissional. Estão todos no histórico do git.
 export const PLATAFORMAS: Plataforma[] = [
   {
     id: 'inhire',
@@ -13,7 +20,6 @@ export const PLATAFORMAS: Plataforma[] = [
     site: 'https://inhire.app',
     nota: 'Sem login: cada empresa publica em <empresa>.inhire.app/vagas e a API pública devolve vaga e formulário.',
   },
-
   {
     id: 'vagaspj',
     regiao: 'brasil',
@@ -24,17 +30,6 @@ export const PLATAFORMAS: Plataforma[] = [
     site: 'https://www.vagaspj.com.br/buscar-vagas',
     nota: 'Só vagas de contratação PJ. Sem login: a lista vem do feed público e a candidatura é um formulário curto no próprio site.',
   },
-
-  {
-    id: 'linkedin',
-    regiao: 'global',
-    nome: 'LinkedIn',
-    sigla: 'in',
-    cor: 'bg-blue-deep',
-    disponivel: false,
-    site: 'https://www.linkedin.com/jobs',
-    nota: 'Exige sessão logada; candidatura simples ("Candidatura simplificada") é o caminho viável.',
-  },
   {
     id: 'gupy',
     regiao: 'brasil',
@@ -43,11 +38,39 @@ export const PLATAFORMAS: Plataforma[] = [
     cor: 'bg-blue-dark',
     disponivel: false,
     site: 'https://portal.gupy.io',
-    nota: 'Conta única do candidato reaproveitada em todas as empresas; formulário longo com perguntas eliminatórias.',
+    nota: 'A próxima a valer o esforço: maior fatia das vagas de tecnologia no Brasil, candidatura dentro da plataforma e uma conta só reaproveitada em todas as empresas. O formulário é longo e tem pergunta eliminatória — que é justamente o que o motor adaptativo e o Sem Piedade já resolvem.',
   },
-  { id: 'catho', regiao: 'brasil', nome: 'Catho', sigla: 'ca', cor: 'bg-orange-deep', disponivel: false, site: 'https://www.catho.com.br', nota: 'Assinatura paga para se candidatar.' },
-  { id: 'infojobs', regiao: 'brasil', nome: 'InfoJobs', sigla: 'ij', cor: 'bg-blue-dark', disponivel: false, site: 'https://www.infojobs.com.br' },
-  { id: 'vagas', regiao: 'brasil', nome: 'Vagas.com', sigla: 'vg', cor: 'bg-green-deep', disponivel: false, site: 'https://www.vagas.com.br' },
+  {
+    id: 'vagas',
+    regiao: 'brasil',
+    nome: 'Vagas.com',
+    sigla: 'vg',
+    cor: 'bg-green-deep',
+    disponivel: false,
+    site: 'https://www.vagas.com.br',
+    nota: 'Candidatura no próprio site, sem assinatura, com volume brasileiro real. Exige conta.',
+  },
+  {
+    id: 'infojobs',
+    regiao: 'brasil',
+    nome: 'InfoJobs',
+    sigla: 'ij',
+    cor: 'bg-blue-dark',
+    disponivel: false,
+    site: 'https://www.infojobs.com.br',
+    nota: 'Candidatura no próprio site, com conta gratuita. Volume menor que Gupy e Vagas.com.',
+  },
+  {
+    id: 'trampos',
+    regiao: 'brasil',
+    nome: 'Trampos.co',
+    sigla: 'tr',
+    cor: 'bg-orange-deep',
+    disponivel: false,
+    site: 'https://trampos.co',
+    nota: 'A confirmar: nicho de tecnologia e design, volume pequeno. Falta checar se a candidatura é no site ou se redireciona para a empresa — se redirecionar, sai daqui.',
+  },
+
   {
     id: 'indeed',
     regiao: 'global',
@@ -56,13 +79,9 @@ export const PLATAFORMAS: Plataforma[] = [
     cor: 'bg-side-top',
     disponivel: true,
     site: 'https://br.indeed.com',
-    nota: 'Exige login manual uma vez; a sessão fica no perfil do navegador do robô.',
+    nota: 'Login manual uma vez; a sessão fica no perfil do navegador do robô. Semiautomático por construção: o Indeed bloqueia navegador oculto e desafia cargas seguidas, então é uma varredura por dia, em janela visível, e o robô para e chama você diante de um bloqueio.',
   },
-  { id: 'glassdoor', regiao: 'global', nome: 'Glassdoor', sigla: 'gd', cor: 'bg-green-deep', disponivel: false, site: 'https://www.glassdoor.com.br' },
-  { id: 'trampos', regiao: 'brasil', nome: 'Trampos.co', sigla: 'tr', cor: 'bg-orange-deep', disponivel: false, site: 'https://trampos.co' },
 
-  // Reservadas em 20/09/2026 (lista do Erich). Sem adapter ainda: ficam registradas para não se perderem
-  // e para a pesquisa de viabilidade começar daqui. O agrupamento da tela vem de .
   {
     id: 'remoteok',
     regiao: 'internacional',
@@ -71,97 +90,7 @@ export const PLATAFORMAS: Plataforma[] = [
     cor: 'bg-green-deep',
     disponivel: false,
     site: 'https://remoteok.com',
-    nota: 'Vagas 100% remotas, em inglês. Tem feed público em JSON (remoteok.com/api) — provável caminho mais curto depois do InHire.',
-  },
-  {
-    id: 'remotive',
-    regiao: 'internacional',
-    nome: 'Remotive',
-    sigla: 'rv',
-    cor: 'bg-blue-deep',
-    disponivel: false,
-    site: 'https://remotive.com',
-    nota: 'Vagas remotas em inglês, com API pública de listagem. A candidatura em si sai do site (link externo da empresa).',
-  },
-  {
-    id: 'wellfound',
-    regiao: 'internacional',
-    nome: 'Wellfound',
-    sigla: 'wf',
-    cor: 'bg-side-top',
-    disponivel: false,
-    site: 'https://wellfound.com',
-    nota: 'Ex-AngelList Talent: startups, exige conta e perfil preenchido; a candidatura usa o perfil, não um PDF avulso.',
-  },
-  {
-    id: 'workingnomads',
-    regiao: 'internacional',
-    nome: 'Working Nomads',
-    sigla: 'wn',
-    cor: 'bg-aqua',
-    disponivel: false,
-    site: 'https://www.workingnomads.com/jobs',
-    nota: 'Curadoria de vagas remotas por e-mail/site; a maioria redireciona para o formulário da empresa.',
-  },
-  {
-    id: 'jsremotely',
-    regiao: 'internacional',
-    nome: 'JS Remotely',
-    sigla: 'js',
-    cor: 'bg-amber',
-    disponivel: false,
-    site: 'https://jsremotely.com',
-    nota: 'Nicho JavaScript remoto; volume pequeno, quase sempre redireciona para a empresa.',
-  },
-  {
-    id: 'powertofly',
-    regiao: 'internacional',
-    nome: 'PowerToFly',
-    sigla: 'pf',
-    cor: 'bg-purple',
-    disponivel: false,
-    site: 'https://powertofly.com',
-    nota: 'Foco em diversidade; exige conta e perfil completo.',
-  },
-  {
-    id: 'flexjobs',
-    regiao: 'internacional',
-    nome: 'FlexJobs',
-    sigla: 'fj',
-    cor: 'bg-blue-dark',
-    disponivel: false,
-    site: 'https://www.flexjobs.com',
-    nota: 'Assinatura paga para ver e se candidatar — automatizar depende de ter conta ativa.',
-  },
-  {
-    id: 'toptal',
-    regiao: 'ferramenta',
-    nome: 'Toptal',
-    sigla: 'tt',
-    cor: 'bg-blue-deep',
-    disponivel: false,
-    site: 'https://www.toptal.com',
-    nota: 'Não é mural de vagas: é um processo seletivo próprio (triagem, testes, entrevistas). Não dá para automatizar candidatura.',
-  },
-  {
-    id: 'jobhunt',
-    regiao: 'ferramenta',
-    nome: 'Job Hunt',
-    sigla: 'jh',
-    cor: 'bg-ink-soft',
-    disponivel: false,
-    site: 'https://www.job-hunt.org',
-    nota: 'Portal de conteúdo e orientação de carreira, não um mural com formulário de candidatura.',
-  },
-  {
-    id: 'kickresume',
-    regiao: 'ferramenta',
-    nome: 'Kickresume',
-    sigla: 'kr',
-    cor: 'bg-orange-deep',
-    disponivel: false,
-    site: 'https://www.kickresume.com',
-    nota: 'Ferramenta de montar currículo, não plataforma de candidatura. Só faria sentido como fonte de modelo de CV.',
+    nota: 'A confirmar: a listagem é fácil (feed público em JSON, remoteok.com/api), mas falta checar se a candidatura é no site ou se redireciona para a empresa — se redirecionar, sai daqui.',
   },
 ];
 
@@ -170,7 +99,6 @@ export const REGIOES: { id: Plataforma['regiao']; titulo: string; texto: string 
   { id: 'brasil', titulo: 'Brasil', texto: 'Vagas publicadas por empresas brasileiras, em português.' },
   { id: 'global', titulo: 'Globais', texto: 'Operam no Brasil e no exterior; a mesma conta serve para os dois.' },
   { id: 'internacional', titulo: 'Internacionais — EUA e Europa', texto: 'Vagas remotas em inglês. Os países que você aceita ficam em Configurações › Meus Dados.' },
-  { id: 'ferramenta', titulo: 'Não são murais de vaga', texto: 'Ficam aqui para não serem procuradas de novo: processo seletivo próprio, conteúdo de carreira ou montador de currículo.' },
 ];
 
 export const getPlataforma = (id: string): Plataforma => PLATAFORMAS.find(p => p.id === id) ?? PLATAFORMAS[0];
