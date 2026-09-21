@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { ConfigIA, ProvedorIA } from '../src/types.ts';
 import { kv } from './storage/db.ts';
+import { similaridade } from './resume/texto.ts';
 
 // Provedor de IA para a adaptação de currículo. A chave fica só no SQLite local (%LOCALAPPDATA%\AutoCV)
 // e nunca é devolvida ao front — o front só vê se existe e os 4 últimos caracteres.
@@ -190,6 +191,7 @@ REGRAS ABSOLUTAS:
 - Se a pergunta pedir uma opção de uma lista, responda copiando EXATAMENTE uma das opções, e nada mais.
 - NUNCA fale sobre o currículo nem sobre falta de informação. Nada de "não informado", "não consta no currículo", "não possuo informações". Quem responde é a pessoa, não alguém lendo o currículo dela.
 - Tecnologia, ferramenta ou prática que o currículo NÃO mostra: nunca responda um "não" seco e nunca invente experiência. Diga, em uma frase curta, que ainda não usou no trabalho e que está aprendendo. Exemplos do tom: "Ainda não usei em projeto, estou estudando.", "Ainda estou aprendendo, sem experiência profissional ainda.". Em Sim/Não com lista, escolha a opção negativa, sem acrescentar texto.
+- Escala de tempo ou de domínio sobre algo que ESTÁ no currículo, mas sem anos declarados: use o tempo total de carreira como referência e escolha a opção de quem usa aquilo profissionalmente. Não caia na opção mais baixa só porque o currículo não diz quantos anos de cada tecnologia.
 - ATENÇÃO — isso vale SÓ para o que falta no currículo. Se o currículo mostra a tecnologia, responda no nível que ele comprova: escolha a opção que corresponde à experiência real, sem se diminuir e sem exagerar. "Ser modesto" NÃO é escolher a opção mais baixa de uma escala quando o currículo sustenta mais. Em escala de domínio, use os anos de experiência e os projetos descritos para escolher a opção certa.
 - Se a pergunta exigir algo que o currículo não permite responder com honestidade (opinião sobre a empresa, dado pessoal, preferência que não está lá), responda exatamente a palavra PULAR e nada mais.
 
@@ -212,6 +214,25 @@ export function limparResposta(bruto: string): string {
     .replace(/^resposta\s*:\s*/i, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * A opção da vaga que corresponde ao que o modelo respondeu, ou null.
+ *
+ * Exigir igualdade exata descartava resposta boa: o modelo devolve "Avançado" e a opção é "Avançado — uso
+ * diário", então a vaga parava para o usuário sem motivo. O motor de formulário já casa por similaridade;
+ * aqui o critério é o mesmo (0,7), e só isso separa "aproveitar a resposta" de "perguntar à toa".
+ */
+export function casarComOpcao(opcoes: string[], resposta: string): string | null {
+  const alvo = limparResposta(resposta).toLowerCase();
+  const exata = opcoes.find(o => limparResposta(o).toLowerCase() === alvo);
+  if (exata) return exata;
+  let melhor: { opcao: string; s: number } | null = null;
+  for (const o of opcoes) {
+    const s = similaridade(o, resposta);
+    if (s >= 0.7 && (!melhor || s > melhor.s)) melhor = { opcao: o, s };
+  }
+  return melhor?.opcao ?? null;
 }
 
 export interface PerguntaParaIA {
@@ -241,7 +262,7 @@ export async function responderPergunta(curriculoMd: string, vaga: { titulo: str
   const bruto = await completar(SYSTEM_RESPOSTA, usuario);
   const texto = limparResposta(bruto);
   if (!texto || PULAR.test(texto)) return null;
-  if (pergunta.opcoes?.length) return pergunta.opcoes.find(o => limparResposta(o).toLowerCase() === texto.toLowerCase()) ?? null;
+  if (pergunta.opcoes?.length) return casarComOpcao(pergunta.opcoes, texto);
   if (texto.length > MAX_RESPOSTA) return null;
   if (CHEIRO_DE_IA.test(texto)) return null;
   return texto;

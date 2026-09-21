@@ -475,6 +475,17 @@ assert.equal(textoIntervalo(90), '1 min 30 s');
 assert.equal(textoIntervalo(480), '8 min', 'valor migrado de minutos precisa de rótulo (era o que faltava no select)');
 console.log('✓ Intervalo entre candidaturas legivel em segundos e minutos');
 
+// Sem Piedade: a resposta da IA casa com a opcao da vaga por similaridade, nao por igualdade exata
+const { casarComOpcao } = await import('./ia.ts');
+const escalaVaga = ['Nunca utilizei', 'Básico — já estudei', 'Intermediário — uso com apoio', 'Avançado — uso no dia a dia'];
+assert.equal(casarComOpcao(escalaVaga, 'Avançado'), 'Avançado — uso no dia a dia', 'exigir igualdade exata jogava fora resposta boa e parava a vaga à toa');
+assert.equal(casarComOpcao(escalaVaga, 'avançado - uso no dia a dia'), 'Avançado — uso no dia a dia');
+assert.equal(casarComOpcao(escalaVaga, 'Intermediário'), 'Intermediário — uso com apoio');
+assert.equal(casarComOpcao(escalaVaga, 'Nunca utilizei'), 'Nunca utilizei');
+assert.equal(casarComOpcao(escalaVaga, 'Especialista'), null, 'resposta que não corresponde a nenhuma opção continua sendo recusada');
+assert.equal(casarComOpcao(['Sim', 'Não'], 'Sim'), 'Sim');
+console.log('✓ Sem Piedade: resposta da IA casa com a opcao da vaga por similaridade');
+
 // Modo Sem Piedade: o que a IA devolve so passa se for curto, humano e (em lista) uma opcao real
 const { CHEIRO_DE_IA, limparResposta } = await import('./ia.ts');
 assert.equal(limparResposta('  "Tenho 3 anos de experiencia."  '), 'Tenho 3 anos de experiencia.');
