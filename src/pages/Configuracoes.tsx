@@ -29,6 +29,7 @@ import { CPF_PATTERN, TELEFONE_PATTERN, mascaraCPF, mascaraMoeda, mascaraTelefon
 import ConfigIA from './ConfigIA';
 import ConfigDescoberta from './ConfigDescoberta';
 import ConfigSensiveis from './ConfigSensiveis';
+import { PAISES, PAISES_REMOTO_PADRAO } from '../paises';
 
 const abas = [
   { id: 'dados', label: 'Meus Dados', icon: User },
@@ -189,27 +190,76 @@ function Campo({ label, children, exigido, ajuda }: { label: string; children: R
   );
 }
 
+/** Multi-seleção de países: campo com autocomplete (datalist nativo) e uma tag removível por país escolhido. */
+function SeletorPaises({ valor, onChange }: { valor: string[]; onChange: (v: string[]) => void }) {
+  const adicionar = (el: HTMLInputElement) => {
+    const pais = PAISES.find(x => x.nome.toLowerCase() === el.value.trim().toLowerCase());
+    if (!pais) return;
+    if (!valor.includes(pais.nome)) onChange([...valor, pais.nome]);
+    el.value = '';
+  };
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor="busca-pais" className="label">
+        Vagas 100% remotas: de quais países
+      </label>
+      <ul className="flex flex-wrap gap-1.5" aria-label="Países escolhidos">
+        {valor.map(n => (
+          <li key={n} className="inline-flex items-center gap-1 rounded-[9px] bg-blue-dark px-2 py-0.5 text-[11px] font-bold text-white">
+            {n}
+            <button type="button" aria-label={`Remover ${n}`} className="rounded p-0.5 hover:bg-white/20" onClick={() => onChange(valor.filter(x => x !== n))}>
+              <X size={11} aria-hidden />
+            </button>
+          </li>
+        ))}
+        {valor.length === 0 && <li className="text-[11px] text-ink-soft">Nenhum: qualquer vaga remota serve.</li>}
+      </ul>
+      <input
+        id="busca-pais"
+        name="buscaPais"
+        list="lista-paises"
+        placeholder="Digite um país e escolha na lista"
+        className="field"
+        onChange={e => adicionar(e.currentTarget)}
+        onKeyDown={e => {
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          adicionar(e.currentTarget);
+        }}
+      />
+      <datalist id="lista-paises">
+        {PAISES.filter(x => !valor.includes(x.nome)).map(x => (
+          <option key={x.iso} value={x.nome} />
+        ))}
+      </datalist>
+      <span className="text-[10px] text-ink-soft">
+        Vaga remota restrita a um país fora desta lista fica de fora; remota sem país declarado sempre entra. No Indeed, o robô busca no site de cada país escolhido.
+      </span>
+    </div>
+  );
+}
+
 function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
   const { estado, salvar } = useEstado();
   const p = estado.perfil!;
   const [sujo, setSujo] = useState(false);
+  const [paises, setPaises] = useState<string[]>(p.paisesRemoto ?? PAISES_REMOTO_PADRAO);
 
   const perfilBusca = estado.curriculos[0]?.perfilBusca;
 
   async function enviar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const dados = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
-    // senioridade/área/rigor moram na automação (o score usa); o cargo desejado fica só no perfil
-    const { regimePreferido, senioridade, area, cargoRigido, presencialSoNaMinhaCidade, ...perfil } = dados;
+    // senioridade/área/rigor moram na automação (o score usa); cargo, cidade e países ficam no perfil
+    const { regimePreferido, senioridade, area, cargoRigido, buscaPais: _fora, ...perfil } = dados;
     await salvar({
-      perfil: { ...p, ...(perfil as unknown as Perfil) },
+      perfil: { ...p, ...(perfil as unknown as Perfil), paisesRemoto: paises },
       automacao: {
         ...estado.automacao,
         regimePreferido: regimePreferido as 'CLT' | 'PJ' | 'perguntar',
         senioridade,
         area,
         cargoRigido: cargoRigido === 'sim',
-        presencialSoNaMinhaCidade: presencialSoNaMinhaCidade === 'on',
       },
     });
     setSujo(false);
@@ -217,7 +267,15 @@ function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
   }
 
   return (
-    <form className="flex flex-1 flex-col gap-4" onChange={() => setSujo(true)} onReset={() => setSujo(false)} onSubmit={enviar}>
+    <form
+      className="flex flex-1 flex-col gap-4"
+      onChange={() => setSujo(true)}
+      onReset={() => {
+        setSujo(false);
+        setPaises(p.paisesRemoto ?? PAISES_REMOTO_PADRAO);
+      }}
+      onSubmit={enviar}
+    >
       <Cabecalho titulo="Meus dados" sub="o robô usa isto para preencher os formulários das vagas" />
       <div className="flex gap-6 max-md:flex-col">
         <div className="flex w-[190px] shrink-0 flex-col items-center gap-2 self-start rounded-lg border border-panel-border p-3.5 max-md:w-full">
@@ -264,9 +322,6 @@ function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
           <Campo label="Cargo desejado" exigido>
             <input name="cargo" placeholder="Ex.: Desenvolvedor Full Stack" defaultValue={p.cargo ?? ''} required className="field" />
           </Campo>
-          <Campo label="Cidade / Estado" exigido>
-            <input name="cidade" placeholder="Ex.: Campinas - SP" autoComplete="address-level2" defaultValue={p.cidade ?? ''} required className="field" />
-          </Campo>
         </div>
       </div>
 
@@ -307,16 +362,6 @@ function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
             </select>
           </Campo>
         </div>
-        <label className="flex items-start gap-2.5 rounded-[7px] border border-panel-border p-3 hover:border-ink-soft has-checked:border-blue-dark has-checked:ring-1 has-checked:ring-blue-dark">
-          <input type="checkbox" name="presencialSoNaMinhaCidade" defaultChecked={estado.automacao.presencialSoNaMinhaCidade} className="mt-0.5 size-[17px] shrink-0" />
-          <span>
-            <span className="block text-xs font-bold">Fora da minha cidade, só vagas remotas</span>
-            <span className="block text-[11px] text-ink-soft">
-              Vaga presencial ou híbrida em outra cidade nem aparece na lista — não adianta ser compatível se você não pode comparecer. Na sua cidade
-              {p.cidade ? ` (${p.cidade})` : ''}, presencial e híbrida continuam valendo normalmente.
-            </span>
-          </span>
-        </label>
         {perfilBusca && (
           <p className="rounded-lg border border-panel-border bg-page-bg p-2.5 text-[11px] text-ink-soft">
             Lido do seu currículo: <strong>{perfilBusca.senioridade}</strong> · {perfilBusca.area} · {perfilBusca.cargos[0] ?? 'cargo não identificado'}
@@ -324,6 +369,27 @@ function AbaDados({ onSalvar }: { onSalvar: (t: string) => void }) {
             {estado.automacao.senioridade || estado.automacao.area ? 'suas escolhas acima estão valendo no lugar.' : 'preencha acima para não depender da dedução.'}
           </p>
         )}
+      </section>
+
+      <section aria-labelledby="dados-local" className="flex flex-col gap-3 border-t border-panel-border pt-3.5">
+        <h3 id="dados-local" className="text-sm font-bold">
+          Onde você aceita trabalhar
+        </h3>
+        <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
+          <Campo label="Vagas presenciais e híbridas: sua cidade">
+            <input name="cidade" placeholder="Ex.: Fortaleza - CE" autoComplete="address-level2" defaultValue={p.cidade ?? ''} className="field" />
+            <span className="text-[10px] text-ink-soft">
+              Uma cidade só. Vaga presencial ou híbrida em outro estado ou país fica de fora; em outra cidade do seu estado, perde pontos. Também é o que vai no campo "cidade" dos formulários.
+            </span>
+          </Campo>
+          <SeletorPaises
+            valor={paises}
+            onChange={v => {
+              setPaises(v);
+              setSujo(true);
+            }}
+          />
+        </div>
       </section>
 
       <section aria-labelledby="dados-extra" className="flex flex-col gap-3 border-t border-panel-border pt-3.5">

@@ -7,6 +7,7 @@ import { detalheVaga, htmlParaTexto, listarVagas, urlVaga, configTenant, type Re
 import { empresas, kv, vagas } from '../../storage/db.ts';
 import { calcularScore, type FiltrosScore } from '../../resume/score.ts';
 import { inferirSenioridade } from '../../resume/analyzer.ts';
+import { paisDoLocal } from '../../localizacao.ts';
 import { extrairSkills } from '../../resume/texto.ts';
 import { emitir } from '../../events.ts';
 
@@ -142,6 +143,7 @@ async function montarVaga(tenant: string, resumo: ResumoVagaInHire, perfil: Perf
     senioridade: inferirSenioridade(d.displayName, descricao),
     modelo: MODELO[d.workplaceType ?? ''] ?? 'indefinido',
     local: d.location ?? '',
+    pais: paisDoLocal(d.location ?? ''),
     url: urlVaga(tenant, d.jobId, d.displayName, d.careerPageId),
     skills,
     camposConhecidos: d.settings?.fields ?? [],

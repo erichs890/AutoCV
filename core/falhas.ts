@@ -11,7 +11,7 @@ export const TRANSITORIO =
 
 /** Falhas de conteúdo: tentar de novo dá exatamente o mesmo resultado (e algumas seriam perigosas de repetir). */
 export const PERMANENTE =
-  /captcha|encerrada|n[ãa]o sei preencher|n[ãa]o existe em|perfil ou curr[ií]culo|sem adapter|recusou o envio|candidatar duas vezes|layout mudou|s[óo] anexa o curr[ií]culo|revise manualmente/i;
+  /captcha|fa[çc]a login|encerrada|n[ãa]o sei preencher|n[ãa]o existe em|perfil ou curr[ií]culo|sem adapter|recusou o envio|candidatar duas vezes|layout mudou|s[óo] anexa o curr[ií]culo|revise manualmente/i;
 
 /** true = vale devolver à fila com espera; false = desistir e deixar em `erro` para o usuário decidir. */
 export function falhaRepetivel(motivo: string): boolean {

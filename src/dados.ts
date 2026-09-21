@@ -1,6 +1,6 @@
 import type { Plataforma, StatusVaga } from './types.ts';
 
-// Catálogo fixo do produto. Só o InHire tem adapter no núcleo; as outras ficam "Indisponível" até alguém
+// Catálogo fixo do produto. InHire e Indeed têm adapter no núcleo; as outras ficam "Indisponível" até alguém
 // escrever o adapter (ver agentlog.md §5). `site` e `nota` ficam reservados aqui para quando chegar a vez delas.
 export const PLATAFORMAS: Plataforma[] = [
   {
@@ -40,9 +40,9 @@ export const PLATAFORMAS: Plataforma[] = [
     nome: 'Indeed',
     sigla: 'id',
     cor: 'bg-side-top',
-    disponivel: false,
+    disponivel: true,
     site: 'https://br.indeed.com',
-    nota: 'Boa parte das vagas redireciona para o site da empresa em vez de ter formulário próprio.',
+    nota: 'Exige login manual uma vez; a sessão fica no perfil do navegador do robô.',
   },
   { id: 'glassdoor', nome: 'Glassdoor', sigla: 'gd', cor: 'bg-green-deep', disponivel: false, site: 'https://www.glassdoor.com.br' },
   { id: 'trampos', nome: 'Trampos.co', sigla: 'tr', cor: 'bg-orange-deep', disponivel: false, site: 'https://trampos.co' },

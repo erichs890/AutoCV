@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Arquivo, Estado } from '../src/types.ts';
 import './platforms/inhire/index.ts';
+import { entrarNoIndeed } from './platforms/indeed/index.ts';
 import { PORTA, DIRS } from './config.ts';
 import { eventos, emitir, type Evento } from './events.ts';
 import { apagarTudo, kv, log, vagas } from './storage/db.ts';
@@ -18,7 +19,7 @@ import { migrarModelo, salvarIA, testarIA } from './ia.ts';
 import { adicionarEmpresa, importarSeed, migrarTenantsAntigos, salvarDescoberta } from './platforms/inhire/discovery.ts';
 import { empresas } from './storage/db.ts';
 
-const SCORE_VERSAO = 9; // suba ao mudar calcularScore: as vagas abertas são repontuadas ao iniciar
+const SCORE_VERSAO = 10; // suba ao mudar calcularScore: as vagas abertas são repontuadas ao iniciar
 import { buscarEmpresas } from './queue.ts';
 
 const registrar = log.registrar;
@@ -93,15 +94,30 @@ const rotas: Record<string, (req: IncomingMessage, res: ServerResponse, url: URL
   'POST /estado': async (req, res) => {
     const parcial = JSON.parse((await corpo(req)).toString('utf8')) as Partial<Estado>;
     const antes = ler.automacao();
-    const cidadeAntes = ler.perfil()?.cidade ?? '';
+    const localAntes = JSON.stringify(ler.localizacao());
+    const cargoAntes = ler.perfil()?.cargo ?? '';
     salvarParcial(parcial);
     const a = parcial.automacao;
-    const filtrosMudaram = a && (a.area !== antes.area || a.senioridade !== antes.senioridade || a.scoreMinimo !== antes.scoreMinimo);
-    if (filtrosMudaram || (parcial.perfil && (parcial.perfil.cidade ?? '') !== cidadeAntes)) repontuar();
+    const filtrosMudaram = a && (a.area !== antes.area || a.senioridade !== antes.senioridade || a.scoreMinimo !== antes.scoreMinimo || a.cargoRigido !== antes.cargoRigido);
+    // Mudou o perfil profissional, a localização ou o cargo: a compatibilidade de todas as vagas muda junto
+    if (filtrosMudaram || (parcial.perfil && JSON.stringify(ler.localizacao()) !== localAntes) || (parcial.perfil && (parcial.perfil.cargo ?? '') !== cargoAntes)) repontuar();
     // Trocou para automático (ou mexeu nos filtros/limite) com o robô ligado: a fila é reavaliada na hora,
     // senão salvar a configuração não teria efeito nenhum até a próxima varredura.
     if (a && (filtrosMudaram || a.modo !== antes.modo || a.regimes.join() !== antes.regimes.join() || a.limiteDiario !== antes.limiteDiario)) enfileirarCompativeis('configuração salva');
     json(res, 200, montarEstado());
+  },
+  // Indeed: login manual na janela do robô (o AutoCV não vê nem guarda a senha); só então a plataforma fica conectada
+  'POST /indeed/entrar': async (_req, res) => {
+    try {
+      const entrou = await entrarNoIndeed(registrar);
+      if (!entrou) return json(res, 400, { erro: 'Não detectei o login no Indeed (tempo esgotado ou janela fechada). Tente de novo.' });
+      // `conexoes` é a única fonte de verdade de plataforma ligada
+      salvarParcial({ conexoes: { ...ler.conexoes(), indeed: { conectadaEm: new Date().toISOString() } } });
+      registrar('sucesso', 'Indeed conectado: a sessão fica no perfil do navegador do robô.');
+      json(res, 200, { ok: true });
+    } catch (e) {
+      json(res, 400, { erro: (e as Error).message });
+    }
   },
   'POST /log': async (req, res) => {
     const { tipo, msg } = JSON.parse((await corpo(req)).toString('utf8'));
@@ -136,7 +152,7 @@ const rotas: Record<string, (req: IncomingMessage, res: ServerResponse, url: URL
   },
   'POST /buscar': async (_r, res) => {
     // Varredura forçada; roda em segundo plano e o front acompanha por eventos/log
-    void buscarVagas().catch(e => registrar('erro', `Varredura falhou: ${(e as Error).message}`));
+    void buscarVagas(true).catch(e => registrar('erro', `Varredura falhou: ${(e as Error).message}`));
     json(res, 200, { ok: true });
   },
   'POST /empresas': async (req, res) => {

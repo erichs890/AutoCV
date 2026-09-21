@@ -68,7 +68,8 @@ export interface Perfil {
   email: string;
   telefone: string;
   cargo?: string;
-  cidade?: string;
+  cidade?: string; // localização para vagas presenciais e híbridas (e o que vai no campo "cidade" dos formulários)
+  paisesRemoto?: string[]; // países aceitos para vagas 100% remotas (src/paises.ts); ausente = só Brasil
   linkedin?: string;
   github?: string;
   portfolio?: string;
@@ -101,6 +102,7 @@ export interface ConfigAutomacao {
   regimePreferido: 'CLT' | 'PJ' | 'perguntar'; // quando a vaga aceita os dois
   ensaio: boolean; // preenche tudo, não envia
   mostrarNavegador: boolean;
+  navegador: 'edge' | 'firefox'; // firefox = build do Playwright (não o Firefox instalado); o PDF é sempre via Chromium oculto
   scoreMinimo: number; // 0–100
   cargoRigido: boolean; // só vagas da mesma função que a sua passam com nota cheia
   presencialSoNaMinhaCidade: boolean; // presencial/híbrido fora da sua cidade nem entra na lista
@@ -176,6 +178,7 @@ export interface Vaga {
   senioridade?: string; // pedida pela vaga (Estágio…Liderança ou Indefinida)
   modelo: 'remoto' | 'hibrido' | 'presencial' | 'indefinido';
   local: string;
+  pais?: string; // país da vaga quando a plataforma informa (nome de src/paises.ts); senão é lido de `local`
   url: string;
   skills: string[];
   camposConhecidos: string[];

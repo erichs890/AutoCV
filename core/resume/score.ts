@@ -1,81 +1,22 @@
 import type { PerfilBusca, Vaga } from '../../src/types.ts';
-import { SOFT, normalizar, similaridade } from './texto.ts';
+import { SOFT, similaridade } from './texto.ts';
+import { vagaCompativelComLocalizacao } from '../localizacao.ts';
+import type { PreferenciasLocalizacao } from '../../src/paises.ts';
 import { familiaDoCargo, familiasAfins, inferirArea, inferirSenioridade, NIVEIS, type Nivel } from './analyzer.ts';
 
 export interface FiltrosScore {
   area?: string; // área escolhida na Automação (sobrepõe a do currículo)
   cargo?: string; // cargo escolhido na Automação (entra junto com os do currículo)
   senioridade?: string; // senioridade escolhida na Automação (sobrepõe a do currículo)
-  local?: string; // cidade/UF do candidato: só pesa em vaga presencial
+  localizacao?: PreferenciasLocalizacao; // cidade (presencial/híbrida) e países (remota) que a pessoa aceita
   cargoRigido?: boolean; // true = vaga com cargo fora da sua função é cortada com força
-  presencialSoNaMinhaCidade?: boolean; // true = presencial/híbrido fora da sua cidade nem aparece
 }
 
 // Quantas competências técnicas suas uma vaga precisa citar para ser considerada do seu ramo
 const NUCLEO_STACK = 6;
 
-const UFS = new Set('AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' '));
-const PAIS = new Set(['br', 'brasil', 'brazil']);
-const ESTADOS: Record<string, string> = {
-  acre: 'AC',
-  alagoas: 'AL',
-  amapa: 'AP',
-  amazonas: 'AM',
-  bahia: 'BA',
-  ceara: 'CE',
-  'distrito federal': 'DF',
-  'espirito santo': 'ES',
-  goias: 'GO',
-  maranhao: 'MA',
-  'mato grosso': 'MT',
-  'mato grosso do sul': 'MS',
-  'minas gerais': 'MG',
-  para: 'PA',
-  paraiba: 'PB',
-  parana: 'PR',
-  pernambuco: 'PE',
-  piaui: 'PI',
-  'rio de janeiro': 'RJ',
-  'rio grande do norte': 'RN',
-  'rio grande do sul': 'RS',
-  rondonia: 'RO',
-  roraima: 'RR',
-  'santa catarina': 'SC',
-  'sao paulo': 'SP',
-  sergipe: 'SE',
-  tocantins: 'TO',
-};
-
-/** "Campinas - SP", "São Paulo/SP", "Belo Horizonte, Minas Gerais" → { cidade, uf }; o que não der para ler fica vazio. */
-export function lerLocal(texto: string): { cidade: string; uf: string } {
-  const partes = texto
-    .split(/\s*[-,/|]\s*/)
-    .map(p => p.trim())
-    .filter(Boolean);
-  const ufExplicita = partes.map(p => p.toUpperCase()).find(p => UFS.has(p)) ?? '';
-  const candidatos = partes.map(normalizar).filter(p => !UFS.has(p.toUpperCase()) && !PAIS.has(p)); // o InHire manda "Cidade, UF, BR"
-  // Com UF explícita, a primeira parte é a cidade mesmo que tenha nome de estado ("São Paulo, SP");
-  // sem UF, "Minas Gerais" sozinho é estado e "São Paulo" sozinho é a cidade (que também resolve o estado)
-  const ambigua = candidatos.length === 1 && (candidatos[0] === 'sao paulo' || candidatos[0] === 'rio de janeiro');
-  const cidade = ufExplicita || ambigua ? (candidatos[0] ?? '') : (candidatos.find(p => !ESTADOS[p]) ?? '');
-  const uf = ufExplicita || ESTADOS[candidatos.find(p => ESTADOS[p]) ?? ''] || '';
-  return { cidade, uf };
-}
-
-/** 1 = mesma cidade ou sem dados; 0,6 = mesmo estado; 0,2 = outro estado. */
-export function fatorLocal(vagaLocal: string, meuLocal: string): { fator: number; motivo: string | null } {
-  const v = lerLocal(vagaLocal);
-  const m = lerLocal(meuLocal);
-  if (!v.cidade && !v.uf) return { fator: 1, motivo: null };
-  if (!m.cidade && !m.uf) return { fator: 1, motivo: 'presencial; preencha sua cidade em Configurações' };
-  if (v.cidade && v.cidade === m.cidade) return { fator: 1, motivo: `presencial na sua cidade` };
-  if (v.uf && v.uf === m.uf) return { fator: v.cidade && m.cidade ? 0.6 : 1, motivo: v.cidade && m.cidade ? `presencial em ${vagaLocal}, outra cidade do seu estado` : 'presencial no seu estado' };
-  if (v.uf && m.uf) return { fator: 0.2, motivo: `presencial em ${vagaLocal}, fora do seu estado` };
-  // Cidades diferentes bastam para saber que é longe: exigir a UF dos dois lados fazia "Fortaleza" (sem UF)
-  // empatar com qualquer lugar do país e a vaga passar inteira.
-  if (v.cidade && m.cidade) return { fator: 0.2, motivo: `presencial em ${vagaLocal}, fora da sua cidade` };
-  return { fator: 1, motivo: null };
-}
+// Leitura de cidade/UF/país e a regra de compatibilidade moram em core/localizacao.ts (todas as plataformas usam)
+export { lerLocal } from '../localizacao.ts';
 
 /**
  * Compatibilidade léxica 0–100, só com o que existe de fato nos dois lados:
@@ -83,11 +24,12 @@ export function fatorLocal(vagaLocal: string, meuLocal: string): { fator: number
  *  - 40% cargo: similaridade entre o título da vaga e os cargos do currículo (ou o cargo configurado)
  *  - área diferente da do currículo corta o resultado pela metade; área igual dá um empurrão
  *  - vaga um nível acima da senioridade do candidato perde 30%; dois ou mais níveis acima, 65%
- *  - vaga PRESENCIAL fora da cidade do candidato: mesmo estado perde 40%, outro estado perde 80% (remoto e híbrido não mudam)
+ *  - localização (core/localizacao.ts): presencial/híbrida em outra cidade do estado perde 40%, em outro estado/país zera;
+ *    remota restrita a um país que a pessoa não escolheu zera
  * Com IA configurada, a busca substitui isto pela avaliação do modelo (core/ia.ts → avaliarVagas).
  */
 export function calcularScore(
-  vaga: Pick<Vaga, 'titulo' | 'skills' | 'descricao'> & Partial<Pick<Vaga, 'modelo' | 'local'>>,
+  vaga: Pick<Vaga, 'titulo' | 'skills' | 'descricao'> & Partial<Pick<Vaga, 'modelo' | 'local' | 'pais'>>,
   perfil: PerfilBusca,
   filtros: FiltrosScore = {},
 ): { score: number; motivo: string } {
@@ -141,23 +83,15 @@ export function calcularScore(
   const nivelCv = filtros.senioridade?.trim() || perfil.senioridade;
   const degraus = NIVEIS.indexOf(nivelVaga as Nivel) - NIVEIS.indexOf(nivelCv as Nivel);
   const senioridadeConhecida = nivelVaga !== 'Indefinida' && NIVEIS.includes(nivelCv as Nivel);
-  // Acima do seu nível você não alcança; dois degraus ABAIXO é regressão de carreira (um Pleno não
-  // deveria disputar estágio) — os dois lados perdem pontos, como a tela de Configurações promete.
   // Um nível acima é ambição normal e a vaga costuma aceitar: quase não penaliza. Dois ou mais acima você
   // não alcança; dois abaixo é regressão de carreira (um Pleno não deveria disputar estágio).
   const fatorSenioridade = !senioridadeConhecida ? 1 : degraus >= 2 ? 0.35 : degraus === 1 ? 0.9 : degraus <= -2 ? 0.5 : 1;
 
-  /**
-   * Presencial E HÍBRIDO exigem estar lá — o híbrido nem era checado, então vaga híbrida em outro estado
-   * passava inteira. Com `presencialSoNaMinhaCidade`, o que exige presença fora da sua cidade não é
-   * penalizado: é cortado (score 0), porque não adianta aparecer uma vaga a que você não pode comparecer.
-   * Local ilegível ("BR") continua valendo 1: melhor mostrar e você decidir do que sumir com a vaga.
-   */
-  const exigePresenca = vaga.modelo === 'presencial' || vaga.modelo === 'hibrido';
-  const local = exigePresenca ? fatorLocal(vaga.local ?? '', filtros.local ?? '') : { fator: 1, motivo: null };
-  const foraDoAlcance = exigePresenca && filtros.presencialSoNaMinhaCidade === true && local.fator < 1;
+  // Localização é regra compartilhada (core/localizacao.ts): fora do estado/país zera, outra cidade do estado
+  // perde 40%, remota restrita a país não escolhido zera. Vale para InHire, Indeed e o que vier depois.
+  const local = filtros.localizacao ? vagaCompativelComLocalizacao(vaga, filtros.localizacao) : { compativel: true, fator: 1, motivo: null };
 
-  const score = foraDoAlcance ? 0 : Math.max(0, Math.min(100, Math.round((60 * parteSkills + 40 * parteTituloEfetiva) * fatorCargo * fatorArea * fatorSenioridade * local.fator)));
+  const score = Math.max(0, Math.min(100, Math.round((60 * parteSkills + 40 * parteTituloEfetiva) * fatorCargo * fatorArea * fatorSenioridade * local.fator)));
   const motivo = [
     tecnicas.length ? `${temTec.length}/${tecnicas.length} competências técnicas` : 'vaga sem competência técnica reconhecida',
     cargoParecido ? `cargo parecido${familiaVaga ? ` (${familiaVaga})` : ''}` : `outra função${familiaVaga ? `: ${familiaVaga}` : ''}${filtros.cargoRigido ? ', filtro rígido' : ''}`,
@@ -169,7 +103,7 @@ export function calcularScore(
           ? `pede ${nivelVaga}, bem abaixo do seu nível (${nivelCv})`
           : `senioridade ok (${nivelVaga})`
       : null,
-    foraDoAlcance ? `${vaga.modelo === 'hibrido' ? 'híbrida' : 'presencial'} em ${vaga.local || 'outra cidade'} — você só quer remotas fora da sua cidade` : local.motivo,
+    local.motivo,
   ]
     .filter(Boolean)
     .join(' · ');

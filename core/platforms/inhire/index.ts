@@ -18,12 +18,11 @@ const buscarVagas = (perfil: PerfilBusca, cfg: ConfigAutomacao, log: Log): Promi
     perfil,
     {
       area: cfg.area,
-      cargo: ler.perfil()?.cargo ?? '',
+      cargo: ler.perfil()?.cargo ?? '', // o cargo desejado mora no perfil: um campo, um dono
       senioridade: cfg.senioridade,
-      local: ler.perfil()?.cidade,
+      localizacao: ler.localizacao(),
       scoreMinimo: cfg.scoreMinimo,
       cargoRigido: cfg.cargoRigido,
-      presencialSoNaMinhaCidade: cfg.presencialSoNaMinhaCidade,
     },
     log,
   );

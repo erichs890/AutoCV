@@ -8,6 +8,8 @@ import { avaliarVagas, iaAtiva, lerIA, responderPergunta } from './ia.ts';
 import { descobrirEmpresas, lerDescoberta } from './platforms/inhire/discovery.ts';
 import { empresas } from './storage/db.ts';
 import { calcularScore } from './resume/score.ts';
+import { vagaCompativelComLocalizacao } from './localizacao.ts';
+import { indeedVencido } from './platforms/indeed/busca.ts';
 import { inferirSenioridade } from './resume/analyzer.ts';
 import { esperaDaTentativa, falhaRepetivel, MAX_TENTATIVAS } from './falhas.ts';
 import { categoriaSensivel } from '../src/sensiveis.ts';
@@ -39,9 +41,8 @@ export function repontuar(): number {
     area: cfg.area,
     cargo: ler.perfil()?.cargo ?? '', // o cargo desejado mora no perfil: um campo, um dono
     senioridade: cfg.senioridade,
-    local: ler.perfil()?.cidade,
+    localizacao: ler.localizacao(), // cidade e países aceitos: regra compartilhada com o Indeed
     cargoRigido: cfg.cargoRigido,
-    presencialSoNaMinhaCidade: cfg.presencialSoNaMinhaCidade,
   };
   const abertas = vagas.listar().filter(v => v.status === 'encontrada' || v.status === 'ignorada');
   for (const v of abertas) {
@@ -123,7 +124,7 @@ export async function repontuarComIA(limite = 50): Promise<number> {
  * Varredura completa: descoberta (lista de empresas → vagas novas gravadas com score léxico),
  * depois IA re-pontua as novas (se configurada) e, em modo automático com robô ligado, as compatíveis entram na fila.
  */
-export async function buscarVagas(): Promise<number> {
+export async function buscarVagas(manual = false): Promise<number> {
   const cfg = ler.automacao();
   const principal = ler.curriculos()[0];
   if (!principal?.perfilBusca) {
@@ -133,7 +134,7 @@ export async function buscarVagas(): Promise<number> {
   let novas: Vaga[] = [];
   for (const id of Object.keys(ler.conexoes())) {
     const adapter = adapters[id];
-    if (adapter) novas = novas.concat(await adapter.buscarVagas(principal.perfilBusca, cfg, registrar));
+    if (adapter) novas = novas.concat(await adapter.buscarVagas(principal.perfilBusca, cfg, registrar, { manual }));
   }
 
   // Com IA configurada, ela lê o currículo e pontua cada vaga nova (o léxico já gravado fica de reserva)
@@ -143,9 +144,12 @@ export async function buscarVagas(): Promise<number> {
       for (const v of novas) {
         const n = notas.get(v.id);
         if (n) {
+          // A localização é regra, não opinião: a IA não devolve à lista uma vaga em outro estado/país
+          const lugar = vagaCompativelComLocalizacao(v, ler.localizacao());
+          if (!lugar.compativel) continue;
           v.score = n.score;
-          v.motivo = n.motivo;
-          vagas.atualizar(v.id, { score: n.score, motivo: n.motivo, status: n.score < cfg.scoreMinimo ? 'ignorada' : 'encontrada' });
+          v.motivo = [n.motivo, lugar.motivo].filter(Boolean).join(' · ');
+          vagas.atualizar(v.id, { score: n.score, motivo: v.motivo, status: n.score < cfg.scoreMinimo ? 'ignorada' : 'encontrada' });
         }
       }
       registrar('info', `${lerIA().provedor === 'gemini' ? 'Gemini' : 'Claude'} avaliou ${notas.size} de ${novas.length} vaga(s) nova(s) contra o seu currículo.`);
@@ -494,6 +498,9 @@ export function iniciarLaco() {
         const temEmpresas = empresas.listar().some(e => e.ativo);
         const vencida = !d.ultimaVarredura || Date.now() - new Date(d.ultimaVarredura).getTime() > d.intervaloHoras * 3600000;
         if (conectado && vencida && temEmpresas && ler.curriculos()[0]?.perfilBusca) {
+          await buscarVagas().catch(e => registrar('erro', `Varredura agendada falhou: ${(e as Error).message}`));
+        } else if (ler.conexoes().indeed && indeedVencido() && ler.curriculos()[0]?.perfilBusca) {
+          // Só o Indeed conectado (ou o InHire em dia): a varredura diária dele não depende da do InHire
           await buscarVagas().catch(e => registrar('erro', `Varredura agendada falhou: ${(e as Error).message}`));
         }
       } finally {

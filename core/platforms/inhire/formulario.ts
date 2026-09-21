@@ -8,7 +8,7 @@ import type { Frame, Locator, Page } from 'playwright';
 import type { PerguntaExtra } from '../../../src/types.ts';
 import { PERGUNTA_CIDADE, PERGUNTA_CPF, type DadosCandidatura, type Log, type ResultadoCandidatura } from '../adapter.ts';
 import { normalizar, similaridade } from '../../resume/texto.ts';
-import { fatorLocal, lerLocal } from '../../resume/score.ts';
+import { lerLocal, vagaCompativelComLocalizacao } from '../../localizacao.ts';
 import { BOTAO_ANEXAR, BOTAO_FINAL, BOTAO_PROXIMO, CAMPO_FIXO, CPF_DE_TERCEIRO, ROTULO_FIXO, SEQUENCIAL, SUCESSO, type PapelFixo } from './selectors.ts';
 
 export type Raiz = Page | Frame;
@@ -319,7 +319,9 @@ export function disponibilidadeNoModelo(campo: CampoDom, dados: DadosCandidatura
   const local = (campo.rotulo.match(/^.*\bem\s+(.+?)\s*\?*\s*$/i)?.[1] ?? '').trim();
   const lido = local ? lerLocal(local) : { cidade: '', uf: '' };
   if (!lido.cidade && !lido.uf) return perguntar(); // não deu para saber onde é: não afirmo nada
-  return fatorLocal(local, dados.cidade).fator >= 0.6 ? sim() : perguntar();
+  // Mesma regra do score: mesma cidade ou mesmo estado = dá para ir; fora disso, pergunta em vez de afirmar
+  const r = vagaCompativelComLocalizacao({ modelo: 'presencial', local }, { localizacaoPresencial: dados.cidade, paisesRemoto: [] });
+  return r.compativel && r.fator >= 0.6 ? sim() : perguntar();
 }
 
 export function resolverCampo(campo: CampoDom, dados: DadosCandidatura): Resolucao {
@@ -545,13 +547,22 @@ async function preencherCampo(raiz: Raiz, c: CampoDom, r: Resolucao, dados: Dado
 // ─── 1.4 Navegação entre etapas ─────────────────────────────────────────────
 type Botao = { loc: Locator; texto: string; final: boolean };
 
+/** Textos que identificam "próxima etapa", "envio final" e "candidatura aceita" numa plataforma. */
+export interface Convencoes {
+  proximo: RegExp;
+  final: RegExp;
+  sucesso: RegExp;
+}
+const CONVENCOES_INHIRE: Convencoes = { proximo: BOTAO_PROXIMO, final: BOTAO_FINAL, sucesso: SUCESSO };
+
 /**
  * Botão de avançar/enviar da etapa. Duas sutilezas do InHire real:
  *  - procura primeiro DENTRO do formulário: o cabeçalho da página tem um "Candidatar" que só rola a tela;
  *  - o botão de verdade vem embrulhado num `<div role="button">` com o mesmo texto. O `<button>` interno é o
  *    que habilita/desabilita, então ele tem preferência; o `div` fica de reserva para layouts sem `<button>`.
+ * `conv` deixa outra plataforma reaproveitar o motor com os textos dela.
  */
-async function acharBotao(raiz: Raiz): Promise<Botao | null> {
+async function acharBotao(raiz: Raiz, conv: Convencoes = CONVENCOES_INHIRE): Promise<Botao | null> {
   for (const escopo of ['form ', '']) {
     const botoes = raiz.locator(`${escopo}button, ${escopo}input[type="submit"], ${escopo}[role="button"]`);
     const total = await botoes.count().catch(() => 0);
@@ -564,9 +575,9 @@ async function acharBotao(raiz: Raiz): Promise<Botao | null> {
       if (!texto) continue;
       const real = ['BUTTON', 'INPUT'].includes(await b.evaluate(el => el.tagName).catch(() => ''));
       // Primeiro achado vale; um <button> de verdade substitui um [role=button] já guardado com o mesmo papel
-      if (BOTAO_PROXIMO.test(texto)) {
+      if (conv.proximo.test(texto)) {
         if (!proximo || (real && proximo.texto === texto)) proximo = { loc: b, texto, final: false };
-      } else if (BOTAO_FINAL.test(texto)) {
+      } else if (conv.final.test(texto)) {
         if (!final || (real && final.texto === texto)) final = { loc: b, texto, final: true };
       }
     }
@@ -978,6 +989,8 @@ const MAX_ETAPAS = 8;
 export interface OpcoesFormulario {
   /** Empresa com requireCustomFormCompletion: o botão final abre o questionário sem criar o talento (ensaio pode clicar) */
   fluxoCondicional?: boolean;
+  /** Outra plataforma usando este motor (Indeed) informa os seus textos de botão e de confirmação */
+  convencoes?: Convencoes;
   /**
    * Prova dura de envio: true depois que uma rota de criação da candidatura respondeu 2xx (index.ts escuta a rede).
    * Enquanto o texto da tela é redação do InHire (pode mudar sem aviso), isto é o fato. Duas consequências:
@@ -1001,7 +1014,8 @@ export async function executarFormulario(page: Page, dados: DadosCandidatura, lo
     }
     return { resultado: { status: 'erro', motivo }, etapas, perguntasRespondidas, typeform };
   };
-  const sucessoNaTela = async () => SUCESSO.test(await page.evaluate(() => document.body.innerText).catch(() => ''));
+  const conv = opcoes.convencoes ?? CONVENCOES_INHIRE;
+  const sucessoNaTela = async () => conv.sucesso.test(await page.evaluate(() => document.body.innerText).catch(() => ''));
 
   for (let etapa = 1; etapa <= MAX_ETAPAS; etapa++) {
     // Confirmação pode aparecer a qualquer momento (depois do questionário no fluxo condicional, por exemplo)

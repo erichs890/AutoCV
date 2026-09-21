@@ -4,6 +4,7 @@ import { emitir } from './events.ts';
 import { iaParaFront } from './ia.ts';
 import { descobertaParaFront } from './platforms/inhire/discovery.ts';
 import { SENSIVEIS_PADRAO, type ConfigSensiveis } from '../src/sensiveis.ts';
+import { PAISES_REMOTO_PADRAO, type PreferenciasLocalizacao } from '../src/paises.ts';
 
 export const AUTOMACAO_PADRAO: ConfigAutomacao = {
   configurada: false,
@@ -19,6 +20,7 @@ export const AUTOMACAO_PADRAO: ConfigAutomacao = {
   regimePreferido: 'CLT',
   ensaio: true,
   mostrarNavegador: false,
+  navegador: 'edge',
   scoreMinimo: 30,
   cargoRigido: false,
   presencialSoNaMinhaCidade: true,
@@ -52,6 +54,10 @@ export const ler = {
   },
   robo: () => kv.get<EstadoRobo>('robo', 'pausado'),
   perguntas: () => kv.get<Pergunta[]>('perguntas', PERGUNTAS_PADRAO),
+  localizacao: (): PreferenciasLocalizacao => {
+    const p = kv.get<Perfil | null>('perfil', null);
+    return { localizacaoPresencial: p?.cidade ?? '', paisesRemoto: p?.paisesRemoto ?? PAISES_REMOTO_PADRAO };
+  },
   sensiveis: () => ({ ...SENSIVEIS_PADRAO, ...kv.get<Partial<ConfigSensiveis>>('sensiveis', {}) }),
   notificacoes: () => kv.get<Record<string, boolean>>('notificacoes', {}),
   proximoEnvioEm: () => kv.get<string | null>('proximoEnvioEm', null),
