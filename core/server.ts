@@ -6,6 +6,7 @@ import type { Arquivo, Estado } from '../src/types.ts';
 import './platforms/inhire/index.ts';
 import { entrarNoIndeed } from './platforms/indeed/index.ts';
 import './platforms/vagaspj/index.ts';
+import './platforms/divulgavagas/index.ts';
 import { PORTA, DIRS } from './config.ts';
 import { eventos, emitir, type Evento } from './events.ts';
 import { apagarTudo, kv, log, vagas } from './storage/db.ts';

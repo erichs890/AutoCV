@@ -839,5 +839,49 @@ assert.deepEqual(casadas, [OPC[0], OPC[1]]);
 assert.equal(casarComOpcao(OPC, 'Isso não existe na lista desta vaga'), null, 'opção inventada é recusada');
 console.log('✓ Marcar várias: a IA pode escolher mais de uma opção');
 
+// 12) Divulga Vagas: peneira pelo slug, JSON-LD e a trava de vaga PcD
+const { lerSitemap, termosDoPerfil, slugInteressa, lerJobPosting: lerJP, modeloDe: modeloDV, montarVaga: montarDV } = await import('./platforms/divulgavagas/busca.ts');
+const { DIVULGA, EMPRESA_OCULTA } = await import('./platforms/divulgavagas/seletores.ts');
+
+const SITEMAP = `<?xml version="1.0"?><urlset>
+<url><loc>https://divulgavagas.com.br/vaga-de-emprego/desenvolvedor-python-senior-home-office-rs-34541421</loc><lastmod>2026-09-23</lastmod></url>
+<url><loc>https://divulgavagas.com.br/vaga-de-emprego/motorista-de-carreta-34296295</loc></url>
+<url><loc>https://divulgavagas.com.br/vagas-de-home-office</loc></url></urlset>`;
+const doSitemap = lerSitemap(SITEMAP);
+assert.equal(doSitemap.length, 2, 'só entram URLs de vaga, não páginas de categoria');
+assert.deepEqual({ id: doSitemap[0].id, slug: doSitemap[0].slug }, { id: '34541421', slug: 'desenvolvedor-python-senior-home-office-rs' });
+
+// A peneira é o que torna viável um acervo de 41 mil vagas quase todo fora da área
+const termos = termosDoPerfil({ area: 'TI', cargos: ['Desenvolvedor Full Stack'], skills: ['python', 'react'], senioridade: 'Pleno' }, 'Desenvolvedor');
+assert.ok(slugInteressa('desenvolvedor-python-senior-home-office-rs', termos));
+assert.ok(!slugInteressa('motorista-de-carreta', termos), 'vaga de outra área não pode custar um download');
+assert.ok(!slugInteressa('auxiliar-administrativo', termos));
+assert.ok(!termos.includes('ia'), 'termo de 2 letras casaria com qualquer slug');
+
+const paginaDV = (jp: object) => `<html><body><script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org/', '@type': 'JobPosting', ...jp })}</script></body></html>`;
+const JP = { title: 'Desenvolvedor Python Sênior – Home Office - Rs | Vaga #34541421', description: 'Vaga de Python', skills: ['Python', 'SQL'], employmentType: 'FULL_TIME' };
+assert.equal(lerJP(paginaDV(JP))?.title, JP.title);
+assert.equal(modeloDV({ jobLocationType: 'TELECOMMUTE' }, 'Dev'), 'remoto');
+assert.equal(modeloDV({}, 'Dev Pleno | Híbrido em Fortaleza'), 'hibrido');
+assert.equal(modeloDV({}, 'Dev'), 'indefinido', 'sem endereço e sem marca não invento presencial');
+
+const itemDV = { id: '34541421', slug: 'desenvolvedor-python-senior', url: 'https://divulgavagas.com.br/vaga-de-emprego/desenvolvedor-python-senior-34541421' };
+const cfgDV = { area: '', senioridade: '', scoreMinimo: 30 } as unknown as Parameters<typeof montarDV>[3];
+const prefDV = { localizacaoPresencial: 'Fortaleza - CE', paisesRemoto: ['Brasil'] };
+const vDV = montarDV(itemDV, paginaDV({ ...JP, jobLocationType: 'TELECOMMUTE' }), perfil, cfgDV, prefDV)!;
+assert.equal(vDV.id, 'divulgavagas:34541421');
+assert.equal(vDV.titulo, 'Desenvolvedor Python Sênior – Home Office - Rs', 'o sufixo "| Vaga #id" é ruído do site');
+assert.equal(vDV.empresa, EMPRESA_OCULTA, 'o site nunca diz de quem é a vaga');
+assert.equal(vDV.modelo, 'remoto');
+assert.ok(vDV.requisitos.includes('Python'), 'as skills do JSON-LD viram requisitos');
+assert.equal(montarDV(itemDV, paginaDV({ ...JP, validThrough: '2020-01-01T00:00:00-03:00' }), perfil, cfgDV, prefDV), null, 'vaga vencida não entra');
+assert.equal(montarDV(itemDV, '<html>sem json-ld</html>', perfil, cfgDV, prefDV), null);
+
+// A caixa de PcD é uma declaração sobre a pessoa: o robô a detecta pelo CONTÊINER, não pelo input
+assert.notEqual(DIVULGA.pcdContainer, DIVULGA.pcd, 'o input fica sempre escondido; quem revela a vaga PcD é o contêiner');
+assert.ok(DIVULGA.sucesso.test('Currículo enviado com sucesso!'));
+assert.ok(!DIVULGA.sucesso.test('Enviar Currículo Li e aceito os Termos'), 'o formulário por enviar não é sucesso');
+console.log('✓ Divulga Vagas: peneira pelo slug, JSON-LD e trava de vaga PcD');
+
 await fecharNavegador();
 console.log('\nTudo certo.');

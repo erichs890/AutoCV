@@ -44,9 +44,9 @@ export const PLATAFORMAS: Plataforma[] = [
     nome: 'Divulga Vagas',
     sigla: 'dv',
     cor: 'bg-aqua',
-    disponivel: false,
+    disponivel: true,
     site: 'https://divulgavagas.com.br',
-    nota: 'Sem login: o formulário é um POST multipart com o PDF e a lista sai do sitemap. Tem uma página de aviso entre a vaga e o formulário, como o anúncio do Vagas PJ.',
+    nota: 'Sem login e sem captcha. A candidatura é SÓ o PDF: o site preenche nome e e-mail com texto de enfeite, então seus dados de perfil não vão. ~41 mil vagas, quase nenhuma de tecnologia — o robô peneira pelo título antes de abrir.',
   },
   {
     id: 'quickin',
