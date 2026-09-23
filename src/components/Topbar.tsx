@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import Logo from './Logo';
 import { Menu } from 'lucide-react';
 import { useEstado } from '../estado';
 import { iniciais } from '../dados';
@@ -23,7 +24,7 @@ export default function Topbar({ titulo, onAbrirMenu }: Props) {
         <Menu size={18} aria-hidden />
       </button>
       <h1 className="text-[19px] font-bold max-md:hidden">{titulo}</h1>
-      <span className="hidden text-xl font-bold text-white max-md:block">AutoCV</span>
+      <Logo className="hidden h-[26px] text-white max-md:block" />
 
       <div className="flex-1" />
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { CircleAlert, CircleCheck, Info, RefreshCw, X } from 'lucide-react';
+import Logo from './components/Logo';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import Footer from './components/Footer';
@@ -66,7 +67,7 @@ function Conectando({ offline, tentar }: { offline: boolean; tentar: () => void 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-page-bg p-6">
       <div className="w-[460px] max-w-full rounded-lg border border-panel-border bg-panel p-6 text-center">
-        <p className="text-[30px] leading-none font-bold">AutoCV</p>
+        <Logo className="mx-auto h-[38px] self-center text-ink" />
         {offline ? (
           <>
             <p className="mt-4 text-sm font-bold">O núcleo do AutoCV não está rodando.</p>

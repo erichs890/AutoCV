@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, FileText, FolderOpen, Upload } from 'lucide-react';
+import Logo from '../components/Logo';
 import { useEstadoBruto } from '../estado';
 import { enviarCurriculo } from '../api';
 import { formatarTamanho, validarCurriculo } from '../dados';
@@ -53,7 +54,7 @@ export default function Cadastro() {
     <div className="flex min-h-dvh items-center justify-center bg-page-bg p-6 max-md:p-3">
       <main className="stagger w-[520px] max-w-full">
         <div className="mb-5 text-center">
-          <p className="text-[30px] leading-none font-bold">AutoCV</p>
+          <Logo className="mx-auto h-[38px] self-center text-ink" />
           <p className="mt-1.5 text-xs text-ink-soft">envio automático de currículos</p>
         </div>
 

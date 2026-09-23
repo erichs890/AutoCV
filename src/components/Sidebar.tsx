@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { Bot, FileText, Gauge, Plug, Settings, type LucideIcon } from 'lucide-react';
 import type { EstadoRobo } from '../types';
+import Logo from './Logo';
 import { useEstado } from '../estado';
 
 export const navItens: { to: string; label: string; curto: string; icon: LucideIcon }[] = [
@@ -36,7 +37,7 @@ export default function Sidebar({ aberto, onFechar }: Props) {
         className={`flex w-[220px] shrink-0 flex-col border-r border-black/50 bg-linear-to-b from-side-top to-side-bottom max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 ${aberto ? '' : 'max-md:hidden'}`}
       >
         <div className="flex h-[91px] shrink-0 flex-col justify-center gap-2 border-b border-black/50 bg-white/5 px-4">
-          <span className="text-[30px] leading-none font-bold tracking-[-0.5px] text-white">AutoCV</span>
+          <Logo className="h-[50px] text-white" />
           <span className="text-[11px] whitespace-nowrap text-white/70">envio automático de currículos</span>
         </div>
 
