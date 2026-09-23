@@ -177,6 +177,18 @@ const modeloAceito = (v: Vaga, cfg: ReturnType<typeof ler.automacao>) => v.model
 export const plataformaEnviaCurriculo = (v: Vaga) => ler.conexoes()[v.plataforma]?.enviar !== false;
 
 /**
+ * Vaga que a fila pode pegar.
+ *
+ * `ensaio` entra de novo quando o modo ensaio está DESLIGADO: ensaiar é preencher sem enviar, então desligar o
+ * ensaio quer dizer "agora manda". Sem isto a vaga ensaiada ficava órfã para sempre — ela continuava na tela,
+ * mas nenhum caminho automático a pegava, porque nada no núcleo jamais tira uma vaga do status `ensaio`.
+ * (Caso real: 13 vagas presas, entre elas as 8 de maior compatibilidade da lista.)
+ *
+ * Com o ensaio LIGADO ela não volta, senão a mesma vaga seria ensaiada sem parar.
+ */
+const podeEntrarNaFila = (v: Vaga, cfg: ReturnType<typeof ler.automacao>) => v.status === 'encontrada' || (v.status === 'ensaio' && !cfg.ensaio);
+
+/**
  * Põe na fila as vagas JÁ ENCONTRADAS que passam nos filtros atuais, da mais compatível para a menos.
  *
  * Antes, só vaga recém-descoberta entrava na fila: ligar o modo automático com 178 vagas encontradas não fazia
@@ -222,7 +234,7 @@ export function enfileirarCompativeis(motivo: string): number {
   // chegando ao mesmo recrutador é pior do que não se candidatar
   const jaVistas = new Set(naFila.map(chaveDaVaga));
   const candidatas = todas
-    .filter(v => v.status === 'encontrada' && v.score >= cfg.scoreMinimo && modeloAceito(v, cfg) && plataformaEnviaCurriculo(v) && !jaCandidatado(v))
+    .filter(v => podeEntrarNaFila(v, cfg) && v.score >= cfg.scoreMinimo && modeloAceito(v, cfg) && plataformaEnviaCurriculo(v) && !jaCandidatado(v))
     .sort((a, b) => b.score - a.score)
     .filter(v => {
       const chave = chaveDaVaga(v);
@@ -233,8 +245,11 @@ export function enfileirarCompativeis(motivo: string): number {
 
   if (!candidatas.length) {
     // "liguei o robô e a fila continua vazia": se o que barrou foi o filtro de plataformas, diga isso
-    const barradas = todas.filter(v => v.status === 'encontrada' && v.score >= cfg.scoreMinimo && modeloAceito(v, cfg) && !jaCandidatado(v) && !plataformaEnviaCurriculo(v));
+    const barradas = todas.filter(v => podeEntrarNaFila(v, cfg) && v.score >= cfg.scoreMinimo && modeloAceito(v, cfg) && !jaCandidatado(v) && !plataformaEnviaCurriculo(v));
     if (barradas.length) registrar('info', `${barradas.length} vaga(s) compatível(is) ficaram de fora: o envio está desligado para a plataforma delas (Plataformas).`);
+    // Ensaiadas esperando o ensaio ser desligado: é a explicação mais provável para "tenho vaga boa e a fila não anda"
+    const ensaiadas = todas.filter(v => v.status === 'ensaio' && v.score >= cfg.scoreMinimo && !jaCandidatado(v));
+    if (cfg.ensaio && ensaiadas.length) registrar('info', `${ensaiadas.length} vaga(s) já ensaiada(s) esperam o modo ensaio ser desligado para entrarem na fila de verdade.`);
     return 0;
   }
   if (restantes <= 0) {
@@ -243,9 +258,13 @@ export function enfileirarCompativeis(motivo: string): number {
   }
 
   const escolhidas = candidatas.slice(0, restantes);
+  const deEnsaio = escolhidas.filter(v => v.status === 'ensaio').length;
   for (const v of escolhidas) vagas.atualizar(v.id, { status: 'na_fila', posicao: vagas.proximaPosicao() });
   const sobra = candidatas.length - escolhidas.length;
-  registrar('info', `${escolhidas.length} vaga(s) compatível(is) entraram na fila (${motivo})${sobra ? `; outras ${sobra} ficam para quando abrir espaço no limite diário` : ''}.`);
+  registrar(
+    'info',
+    `${escolhidas.length} vaga(s) compatível(is) entraram na fila (${motivo})${deEnsaio ? `, ${deEnsaio} dela(s) já ensaiada(s) e agora para envio de verdade` : ''}${sobra ? `; outras ${sobra} ficam para quando abrir espaço no limite diário` : ''}.`,
+  );
   emitir({ tipo: 'estado' });
   return escolhidas.length;
 }

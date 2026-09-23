@@ -353,8 +353,11 @@ kv.set('conexoes', { teste: { conectadaEm: new Date().toISOString(), enviar: fal
 const semEnvio = enfileirar({ status: 'encontrada', posicao: undefined });
 assert.equal(enfileirarCompativeis('teste'), 0, 'plataforma com envio desligado não põe vaga na fila');
 assert.equal(st(semEnvio), 'encontrada', 'a vaga continua na lista, só não entra na fila');
-// Desligar o envio não é desconectar: um clique seu em "Candidatar" continua valendo
-await candidatarAgora(semEnvio);
+// Desligar o envio não é desconectar: um clique seu em "Candidatar" continua valendo.
+// `candidatarAgora` é síncrono e dispara o trabalhador em segundo plano: espere ele terminar, senão o
+// `rodando` dele ainda estaria de pé e engoliria o `processarProxima` do cenário seguinte.
+candidatarAgora(semEnvio);
+await new Promise(r => setTimeout(r, 150));
 assert.equal(st(semEnvio), 'enviada', 'o filtro é do robô, não seu: o envio manual continua funcionando');
 
 cenario();
@@ -370,6 +373,33 @@ const semCampo = enfileirar({ status: 'encontrada', posicao: undefined });
 assert.equal(enfileirarCompativeis('teste'), 1, 'conexão sem o campo `enviar` continua enviando');
 assert.equal(st(semCampo), 'na_fila');
 console.log('✓ Filtro por portal: envio desligado tira da fila, mantém na lista e não bloqueia o envio manual');
+
+// ─── 11) Vaga ensaiada volta para a fila quando o ensaio é desligado ─────────────────────────────
+// Caso real (23/09/2026): ensaio já desligado, modo automático, e 13 vagas presas em `ensaio` — entre elas as
+// 8 de maior compatibilidade da lista. A fila só aceitava `encontrada` e nada jamais tirava a vaga de `ensaio`.
+cenario({ ensaio: true });
+const ensaiada = enfileirar();
+roteiro.set(ensaiada, { status: 'ensaio', captura: '', pronto: true });
+await processarProxima();
+assert.equal(st(ensaiada), 'ensaio');
+assert.equal(enviadas(), 0);
+
+// com o ensaio ainda ligado ela NÃO volta: seria ensaiar a mesma vaga para sempre
+assert.equal(enfileirarCompativeis('ensaio ligado'), 0, 'com ensaio ligado a vaga ensaiada não pode voltar à fila');
+assert.equal(st(ensaiada), 'ensaio');
+
+// desligou o ensaio = "agora manda": ela volta e é enviada de verdade
+kv.set('automacao', { ...ler.automacao(), ensaio: false });
+roteiro.set(ensaiada, { status: 'enviada' });
+assert.equal(enfileirarCompativeis('ensaio desligado'), 1, 'com ensaio desligado a vaga ensaiada tem de voltar à fila');
+assert.equal(st(ensaiada), 'na_fila');
+await processarProxima(true);
+assert.equal(st(ensaiada), 'enviada');
+assert.equal(enviadas(), 1, 'o ensaio não contava como envio; agora existe uma candidatura de verdade');
+
+// e depois de enviada de verdade, continua valendo a trava de duplicidade
+assert.throws(() => candidatarAgora(ensaiada), /já se candidatou/);
+console.log('✓ Vaga ensaiada volta à fila ao desligar o ensaio (e nunca com ele ligado)');
 
 apagarTudo();
 log.listar(0);
