@@ -87,6 +87,16 @@ export function categoriaSensivel(rotulo: string): CategoriaSensivel | null {
   return null;
 }
 
+/**
+ * Dado da vida da pessoa que a IA não tem como saber e não pode chutar: documento, endereço, contato,
+ * dinheiro, data. Diferente de `categoriaSensivel` (autodeclaração, que é escolha do usuário por lei):
+ * aqui o problema é factual — errar o CPF ou inventar um bairro vai num formulário real de uma empresa real.
+ * A maioria destes campos o motor de formulário já preenche sozinho pelo perfil; esta regra pega os que
+ * aparecem como pergunta em texto livre.
+ */
+export const DADO_PESSOAL =
+  /\bcpf\b|\brg\b|\bpis\b|\bctps\b|carteira de trabalho|t[íi]tulo de eleitor|passaporte|\bcnh\b|habilita[çc][ãa]o|\bcnpj\b|endere[çc]o|\bbairro\b|\brua\b|\bcep\b|complemento|n[úu]mero da casa|data de nascimento|nascimento|\bidade\b|estado civil|nome (da m[ãa]e|do pai|completo da m[ãa]e)|pretens[ãa]o|sal[áa]rio|remunera[çc][ãa]o|quanto (voc[êe] )?(ganha|recebe)|banco|ag[êe]ncia|conta corrente|\bchave pix\b|telefone|celular|whatsapp|e-?mail/i;
+
 /** Opção "prefiro não responder", nas variações que os formulários usam. */
 export const PREFIRO_NAO = /prefiro n[ãa]o (responder|informar|declarar|dizer|opinar)|n[ãa]o (desejo|quero) (declarar|informar|responder)|prefiro n[ãa]o\b|n[ãa]o informar/i;
 

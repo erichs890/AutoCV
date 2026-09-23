@@ -789,5 +789,49 @@ assert.equal(plataformaNoFoco(conexoesTeste, 'gupy'), true, 'plataforma sem cone
 assert.equal(plataformaNoFoco({}, 'inhire'), true);
 console.log('✓ Foco por plataforma: mesma regra para a fila e para a lista');
 
+// 11) Modo "Só na dúvida": o que a IA resolve e o que ela devolve
+const { DADO_PESSOAL } = await import('../src/sensiveis.ts');
+// Devolve: dado que a IA não tem como saber e erraria num formulário de uma empresa real
+for (const r of [
+  'Qual o seu CPF?',
+  'Informe seu endereço completo',
+  'Em qual bairro você mora?',
+  'Qual o seu CEP?',
+  'Data de nascimento',
+  'Qual a sua pretensão salarial?',
+  'Nome da mãe',
+  'Seu telefone para contato',
+  'Qual o seu e-mail?',
+])
+  assert.ok(DADO_PESSOAL.test(r), `deveria ficar com o usuário: "${r}"`);
+// Resolve: pergunta técnica tem resposta certa e não depende de dado pessoal nenhum
+for (const r of [
+  'Para garantir a resiliência de um serviço em ambiente distribuído, quais padrões você aplicaria?',
+  'Quais das seguintes práticas são fundamentais para código limpo?',
+  'Qual abordagem garante consistência eventual entre microsserviços?',
+  'Qual seu nível de experiência com Java 11+ e Spring Boot?',
+  'Você já trabalhou com modelos de Machine Learning em produção?',
+])
+  assert.ok(!DADO_PESSOAL.test(r), `a IA deveria poder tratar: "${r}"`);
+console.log('✓ Dado pessoal nunca chega na IA; pergunta técnica chega');
+
+// "Marque todas que se aplicam": o motor espera "A | B", e casar só uma deixava a resposta pela metade
+const OPC = [
+  'Circuit Breaker para interromper chamadas a serviços indisponíveis e Fallback para prover uma resposta alternativa.',
+  'Implementar um mecanismo de Timeout para limitar o tempo de espera por uma resposta.',
+  'Utilizar Retry apenas quando o serviço retornar um erro 500, sem nenhuma outra estratégia.',
+  'Ignorar completamente as falhas de comunicação entre serviços.',
+];
+const varias =
+  'Circuit Breaker para interromper chamadas a serviços indisponíveis e Fallback para prover uma resposta alternativa. | Implementar um mecanismo de Timeout para limitar o tempo de espera por uma resposta.';
+const casadas = varias
+  .split('|')
+  .map(t => casarComOpcao(OPC, t))
+  .filter(Boolean);
+assert.equal(casadas.length, 2, 'as duas opções corretas têm de ser reconhecidas');
+assert.deepEqual(casadas, [OPC[0], OPC[1]]);
+assert.equal(casarComOpcao(OPC, 'Isso não existe na lista desta vaga'), null, 'opção inventada é recusada');
+console.log('✓ Marcar várias: a IA pode escolher mais de uma opção');
+
 await fecharNavegador();
 console.log('\nTudo certo.');

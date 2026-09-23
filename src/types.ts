@@ -114,7 +114,9 @@ export interface ConfigAutomacao {
   scoreMinimo: number; // 0–100
   cargoRigido: boolean; // só vagas da mesma função que a sua passam com nota cheia
   presencialSoNaMinhaCidade: boolean; // presencial/híbrido fora da sua cidade nem entra na lista
-  modoPerguntas: 'manual' | 'sem_piedade'; // manual: pergunta nova pausa para você · sem_piedade: a IA responde e segue
+  // manual: toda pergunta nova pausa · duvida: a IA resolve o que o currículo e o conhecimento técnico
+  // sustentam e devolve o resto · sem_piedade: a IA responde tudo e nunca devolve
+  modoPerguntas: 'manual' | 'duvida' | 'sem_piedade';
 }
 
 // ─── Descoberta de vagas (InHire) ────────────────────────────

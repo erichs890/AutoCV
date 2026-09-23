@@ -56,7 +56,7 @@ function opcoesIntervalo(atual: number): [number, string][] {
   return [[atual, `A cada ${textoIntervalo(atual)} (atual)`], ...INTERVALOS];
 }
 
-const MODOS_PERGUNTA: { id: 'manual' | 'sem_piedade'; curto: string; titulo: string; texto: string; etiqueta?: string }[] = [
+const MODOS_PERGUNTA: { id: ConfigAutomacao['modoPerguntas']; curto: string; titulo: string; texto: string; etiqueta?: string; precisaIA?: boolean }[] = [
   {
     id: 'manual',
     curto: 'Eu respondo',
@@ -64,12 +64,21 @@ const MODOS_PERGUNTA: { id: 'manual' | 'sem_piedade'; curto: string; titulo: str
     texto: 'Quando uma empresa faz uma pergunta que você ainda não respondeu, o robô pausa só aquela vaga e espera você digitar. A fila continua com as outras.',
   },
   {
+    id: 'duvida',
+    curto: 'Só na dúvida',
+    titulo: 'Só na dúvida — a IA resolve o que dá e me chama no resto',
+    precisaIA: true,
+    texto:
+      'Pergunta técnica com resposta certa ("qual padrão trata falhas transitórias?") a IA responde sozinha. Ela só devolve para você o que depende de você: conhecimento que o seu currículo não mostra (você pode ter e não ter escrito) e dado pessoal.',
+  },
+  {
     id: 'sem_piedade',
     curto: 'Sem Piedade',
     titulo: 'Sem Piedade — a IA responde e não para',
+    precisaIA: true,
     etiqueta: 'envio 100% automático',
     texto:
-      'A IA responde as perguntas das empresas com base no seu currículo, o mais curto possível e sem jeito de texto de robô. Nada é inventado: o que o currículo não sustenta vira resposta curta e neutra.',
+      'A IA responde TODAS as perguntas e nunca para para perguntar. O que o currículo não sustenta vira "ainda estou aprendendo" em vez de voltar para você. Nada é inventado, mas ninguém confere antes de enviar.',
   },
 ];
 
@@ -96,7 +105,11 @@ export default function Automacao() {
   const conectadas = PLATAFORMAS.filter(p => estado.conexoes[p.id]);
   const empresasAtivas = estado.empresas.filter(e => e.ativo).length;
   const ativo = estado.robo === 'ativo';
-  const pendente = estado.vagas.find(v => v.pendencia);
+  // Perguntas postas em espera nesta sessão: a vaga continua pendente no núcleo, só o modal não volta.
+  // Sem isto não havia saída não-destrutiva: fechar no X, no Esc ou clicando fora descartava a vaga.
+  const [adiadas, setAdiadas] = useState<string[]>([]);
+  const comPendencia = estado.vagas.filter(v => v.pendencia);
+  const pendente = comPendencia.find(v => !adiadas.includes(v.id));
   const abertas = estado.vagas.filter(v => v.status !== 'encerrada');
   // Vaga já enviada sai da lista: o trabalho com ela acabou, e ficar olhando currículo que já foi só atrapalha
   // quem procura o que ainda falta. O histórico completo fica no Painel, em "Últimas candidaturas".
@@ -156,12 +169,19 @@ export default function Automacao() {
   }
 
   /** Troca fora do formulário: grava na hora, senão o usuário mudaria e ligaria o robô com o modo antigo. */
-  async function trocarModoPerguntas(m: 'manual' | 'sem_piedade') {
+  async function trocarModoPerguntas(m: ConfigAutomacao['modoPerguntas']) {
     if (m === estado.automacao.modoPerguntas) return;
     set({ modoPerguntas: m });
     setBase(b => ({ ...b, modoPerguntas: m }));
     await salvar({ automacao: { ...estado.automacao, modoPerguntas: m } });
-    registrar('info', m === 'sem_piedade' ? 'Modo Sem Piedade: a IA passa a responder as perguntas das empresas.' : 'Modo padrão: perguntas novas pausam a vaga e esperam você.');
+    registrar(
+      'info',
+      m === 'sem_piedade'
+        ? 'Modo Sem Piedade: a IA responde tudo e não para mais para perguntar.'
+        : m === 'duvida'
+          ? 'Modo Só na dúvida: a IA responde o que dá e devolve para você o que depende de você.'
+          : 'Modo padrão: perguntas novas pausam a vaga e esperam você.',
+    );
   }
 
   async function buscar() {
@@ -225,7 +245,7 @@ export default function Automacao() {
           <div className="flex flex-wrap gap-1.5">
             {MODOS_PERGUNTA.map(m => {
               const escolhido = estado.automacao.modoPerguntas === m.id;
-              const bloqueado = m.id === 'sem_piedade' && (estado.ia.provedor === 'nenhum' || !estado.ia.chaveDefinida);
+              const bloqueado = !!m.precisaIA && (estado.ia.provedor === 'nenhum' || !estado.ia.chaveDefinida);
               return (
                 <button
                   key={m.id}
@@ -251,6 +271,31 @@ export default function Automacao() {
             <strong>Modo ensaio ligado:</strong> o robô abre a vaga, preenche o formulário e anexa o currículo, mas não clica em enviar. Confira uma captura de tela na lista abaixo e, quando estiver
             confiante, desligue o ensaio na configuração.
           </p>
+        )}
+
+        {comPendencia.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg border border-amber bg-amber/15 px-3.5 py-2.5">
+            <p className="text-[11px] text-amber-ink">
+              <strong>
+                {comPendencia.length} vaga(s) esperando você
+                {adiadas.length ? ` · ${adiadas.length} em espera nesta sessão` : ''}.
+              </strong>{' '}
+              Elas não seguram a fila: as outras continuam sendo enviadas.
+            </p>
+            <div className="flex gap-2">
+              {adiadas.length > 0 && (
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAdiadas([])}>
+                  Retomar as adiadas
+                </button>
+              )}
+              {ativo && (
+                <button type="button" className="btn btn-danger btn-sm" onClick={() => post('/robo', { ligar: false })}>
+                  <Pause size={14} aria-hidden />
+                  Pausar o robô
+                </button>
+              )}
+            </div>
+          </div>
         )}
 
         <Panel
@@ -508,7 +553,7 @@ export default function Automacao() {
               <div className="flex flex-col gap-2">
                 {MODOS_PERGUNTA.map(m => {
                   const escolhido = cfg.modoPerguntas === m.id;
-                  const bloqueado = m.id === 'sem_piedade' && (estado.ia.provedor === 'nenhum' || !estado.ia.chaveDefinida);
+                  const bloqueado = !!m.precisaIA && (estado.ia.provedor === 'nenhum' || !estado.ia.chaveDefinida);
                   return (
                     <label
                       key={m.id}
@@ -526,10 +571,11 @@ export default function Automacao() {
                     </label>
                   );
                 })}
-                {cfg.modoPerguntas === 'sem_piedade' && (
+                {cfg.modoPerguntas !== 'manual' && (
                   <p className="rounded-lg border border-amber bg-amber/15 p-2.5 text-[11px] text-amber-ink">
-                    A IA nunca responde autodeclaração (gênero, cor/raça, deficiência, religião, saúde) — isso continua vindo só da sua política em Configurações. Resposta longa, com jeito de texto de
-                    IA, ou opção que não existe na vaga é recusada e a vaga volta a esperar por você.
+                    Em qualquer modo com IA: autodeclaração (gênero, cor/raça, deficiência, religião, saúde) e dado pessoal (CPF, endereço, contato, pretensão) nunca vão para a IA — vêm da sua
+                    política em Configurações ou voltam para você. Resposta longa, com jeito de texto de IA, ou opção que não existe na vaga é recusada e a vaga volta a esperar.
+                    {cfg.modoPerguntas === 'sem_piedade' && ' No Sem Piedade, tudo o mais é respondido e enviado sem você conferir.'}
                   </p>
                 )}
               </div>
@@ -636,7 +682,10 @@ export default function Automacao() {
         </Panel>
       </div>
 
-      {pendente && <Pendencia vaga={pendente} />}
+      {pendente && (
+        // `key` por vaga: cada pergunta é uma decisão própria, então o modal remonta e reabre na seguinte
+        <Pendencia key={pendente.id} vaga={pendente} roboAtivo={ativo} onAdiar={() => setAdiadas(a => [...a, pendente.id])} onAdiarTudo={() => setAdiadas(comPendencia.map(v => v.id))} />
+      )}
       {adaptacaoDe && <Adaptacao vaga={estado.vagas.find(v => v.id === adaptacaoDe)!} onFechar={() => setAdaptacaoDe(null)} />}
     </div>
   );
@@ -819,7 +868,13 @@ function Adaptacao({ vaga, onFechar }: { vaga: Vaga; onFechar: () => void }) {
   );
 }
 
-function Pendencia({ vaga }: { vaga: Vaga }) {
+/**
+ * Duas saídas sem perder nada, e é a diferença entre elas que resolve a fila grande:
+ *  - "Responder depois" adia ESTA e abre a próxima, para ir peneirando uma a uma;
+ *  - fechar (X, Esc, clique fora) adia TODAS de uma vez — é como sair da frente quando são dezessete.
+ * Nenhuma das duas mexe na vaga: quem desiste dela é o "Pular esta vaga".
+ */
+function Pendencia({ vaga, onAdiar, onAdiarTudo, roboAtivo }: { vaga: Vaga; onAdiar: () => void; onAdiarTudo: () => void; roboAtivo: boolean }) {
   const p = vaga.pendencia!;
   // Pergunta sobre esta empresa ("nossas produções") não deve nascer marcada para reaproveitar em outra vaga
   const soDestaVaga = p.tipo === 'pergunta' && perguntaSoDestaVaga(p.pergunta.rotulo, vaga.empresa);
@@ -831,11 +886,15 @@ function Pendencia({ vaga }: { vaga: Vaga }) {
     return (
       <Modal
         aberto
-        onFechar={() => post('/fila/remover', { id: vaga.id })}
+        // Fechar (X, Esc, clique fora) põe em espera. Antes isto DESCARTAVA a vaga: nenhuma saída era inocente.
+        onFechar={onAdiarTudo}
         icon={MessageCircleQuestion}
         titulo={q.sensivel ? 'O InHire pede uma autodeclaração' : 'O InHire perguntou'}
         rodape={
           <>
+            <button type="button" className="btn btn-secondary" onClick={onAdiar}>
+              Responder depois
+            </button>
             <button type="button" className="btn btn-secondary" onClick={() => post('/fila/remover', { id: vaga.id })}>
               Pular esta vaga
             </button>
@@ -845,8 +904,20 @@ function Pendencia({ vaga }: { vaga: Vaga }) {
           </>
         }
       >
-        <p className="text-xs text-ink-soft">
-          Vaga <strong className="text-ink">{vaga.titulo}</strong> em {vaga.empresa}
+        <p className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-soft">
+          <span>
+            Vaga <strong className="text-ink">{vaga.titulo}</strong> em {vaga.empresa}
+          </span>
+          {/* Daqui de dentro, porque o <dialog> fica em top layer e tapa o botão de pausar da página */}
+          {roboAtivo && (
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => post('/robo', { ligar: false })}>
+              <Pause size={13} aria-hidden />
+              Pausar o robô
+            </button>
+          )}
+        </p>
+        <p className="text-[11px] text-ink-soft">
+          "Responder depois" pula para a próxima pergunta; fechar no X adia todas. Nos dois casos a vaga continua esperando e não segura a fila — quem desiste dela é o "Pular esta vaga".
         </p>
         {q.sensivel && (
           <p className="rounded-lg border border-amber bg-amber/15 p-2.5 text-[11px] text-amber-ink">
@@ -899,12 +970,16 @@ function Pendencia({ vaga }: { vaga: Vaga }) {
   return (
     <Modal
       aberto
-      onFechar={() => post('/preview', { id: vaga.id, decisao: 'cancelar' })}
+      // Fechar põe em espera; cancelar a candidatura é o botão, não um Esc sem querer
+      onFechar={onAdiarTudo}
       icon={Sparkles}
       titulo={`Currículo adaptado — ${vaga.titulo}`}
       largo
       rodape={
         <>
+          <button type="button" className="btn btn-secondary" onClick={onAdiar}>
+            Decidir depois
+          </button>
           <button type="button" className="btn btn-secondary" onClick={() => post('/preview', { id: vaga.id, decisao: 'cancelar' })}>
             Cancelar candidatura
           </button>

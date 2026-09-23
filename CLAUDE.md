@@ -5,7 +5,7 @@ App local que acha vagas (InHire, Indeed, Vagas PJ) e candidata sozinho. Front V
 ## Rodar
 
 `npm run core` (núcleo, :4780) + `npm run dev` (UI, :5173) — ou `start.bat`. Dados em `%LOCALAPPDATA%\AutoCV`.
-Antes de commitar: `npm run check` (54 verificações) e `npm run build` (biome + tsc + vite).
+Antes de commitar: `npm run check` (56 verificações) e `npm run build` (biome + tsc + vite).
 
 ## Fluxo
 
@@ -22,7 +22,7 @@ varredura → score → fila → `executarCandidatura` → adapter → **preench
 
 1. **Sucesso é a resposta HTTP**, não texto na tela: 2xx em `ROTAS_ENVIO` = enviada. Texto muda, API não. Nunca reportar erro depois de um envio comprovado; nunca clicar no botão final duas vezes.
 2. **Nunca inventar nada no currículo.** `validarAdaptacao` compara palavra a palavra; qualquer termo novo descarta a adaptação e manda o original.
-3. **Autodeclaração** (gênero, raça, PcD, religião, saúde) nunca sai de similaridade, de currículo nem de IA — só da escolha explícita do usuário (`src/sensiveis.ts`).
+3. **Autodeclaração** (gênero, raça, PcD, religião, saúde) nunca sai de similaridade, de currículo nem de IA — só da escolha explícita do usuário (`src/sensiveis.ts`). **Dado pessoal** (`DADO_PESSOAL`: documento, endereço, contato, dinheiro, data) também não passa pela IA: errar isso vai num formulário real.
 4. **Uma vaga, uma candidatura.** Em qualquer caminho: fila, clique manual, retomada de pendência.
 5. **Ensaio não envia.** As rotas de envio ficam abortadas no navegador. Desligar o ensaio devolve as vagas ensaiadas à fila (`podeEntrarNaFila`) — senão elas ficam órfãs: a tela mostra, o robô nunca pega.
 
@@ -33,7 +33,7 @@ varredura → score → fila → `executarCandidatura` → adapter → **preench
 | nome, e-mail, celular, LinkedIn, CPF, cidade, pretensão, **cargo desejado** | `perfil` (Configurações › Meus Dados) |
 | senioridade, área, rigor de função | `automacao` — editável **só** em Configurações; Automação espelha |
 | cidade (presencial/híbrida) e países aceitos (remota) | `perfil.cidade` + `perfil.paisesRemoto` → `ler.localizacao()` |
-| ritmo, limite, janela, modo, ensaio, adaptação, modo de perguntas | `automacao` (Automação) |
+| ritmo, limite, janela, modo, ensaio, adaptação, modo de perguntas (`manual` · `duvida` · `sem_piedade`) | `automacao` (Automação) |
 | plataforma ligada **e se está no foco da automação** (`enviar`) | `conexoes` — editável **só** em Automação; Plataformas espelha |
 | respostas de autodeclaração | `sensiveis` |
 | perguntas das empresas | `perguntas` |

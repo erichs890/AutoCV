@@ -193,7 +193,24 @@ REGRAS ABSOLUTAS:
 - ATENÇÃO — isso vale SÓ para o que falta no currículo. Se o currículo mostra a tecnologia, responda no nível que ele comprova: escolha a opção que corresponde à experiência real, sem se diminuir e sem exagerar. "Ser modesto" NÃO é escolher a opção mais baixa de uma escala quando o currículo sustenta mais. Em escala de domínio, use os anos de experiência e os projetos descritos para escolher a opção certa.
 - Se a pergunta exigir algo que o currículo não permite responder com honestidade (opinião sobre a empresa, dado pessoal, preferência que não está lá), responda exatamente a palavra PULAR e nada mais.
 
+DOIS TIPOS DE PERGUNTA, E ELES NÃO SE RESPONDEM IGUAL:
+- CONHECIMENTO TÉCNICO: tem resposta certa e não depende do currículo ("qual padrão trata falhas transitórias?", "o que garante consistência eventual entre serviços?", "quais práticas são de código limpo?"). Responda pelo conhecimento técnico, escolhendo a opção ou as opções corretas. Não diga que não sabe por causa do currículo: isto é uma prova, não uma entrevista sobre você.
+- AUTORRELATO: fala da SUA experiência, tempo ou nível ("quantos anos com Java?", "qual seu nível em Kubernetes?", "você já trabalhou com X?"). Aqui vale o currículo, e só ele.
+
+MARCAR VÁRIAS: se a pergunta pedir para marcar todas as que se aplicam, responda TODAS as opções corretas separadas por | (barra vertical), copiando cada uma exatamente. Uma só quando só uma estiver certa.
+
 Responda apenas com o texto da resposta.`;
+
+/**
+ * Acréscimo do modo "Só na dúvida": em vez de assumir por conta própria o que o currículo não mostra, a IA
+ * devolve a pergunta. É a diferença entre os dois modos com IA — no Sem Piedade ela nunca devolve nada.
+ */
+const REGRA_CAUTELOSA = `
+MODO CAUTELOSO (vale mais que as regras acima quando houver conflito):
+- Pergunta de CONHECIMENTO TÉCNICO: responda normalmente. É para isso que você está aqui.
+- AUTORRELATO sobre algo que o currículo NÃO mostra: não invente e NÃO responda "estou aprendendo". Responda exatamente PULAR. A pessoa pode ter essa experiência sem ter posto no currículo, e quem decide é ela.
+- Qualquer dado pessoal (documento, endereço, contato, dinheiro, data) ou opinião sobre a empresa: PULAR.
+- Na dúvida entre responder e PULAR, escolha PULAR.`;
 
 /** O modelo avisa que não dá para responder com honestidade; a vaga volta para o usuário. */
 const PULAR = /^pular\.?$/i;
@@ -243,7 +260,12 @@ export interface PerguntaParaIA {
  * Devolve a resposta ou null quando não dá para confiar (texto com cheiro de IA, longo demais, ou opção que
  * não existe na vaga). null faz a vaga pausar para o usuário, como no modo normal.
  */
-export async function responderPergunta(curriculoMd: string, vaga: { titulo: string; empresa: string; descricao: string }, pergunta: PerguntaParaIA): Promise<string | null> {
+export async function responderPergunta(
+  curriculoMd: string,
+  vaga: { titulo: string; empresa: string; descricao: string },
+  pergunta: PerguntaParaIA,
+  opcoes_: { cauteloso?: boolean } = {},
+): Promise<string | null> {
   const lista = (pergunta.opcoes ?? []).map(o => `- ${o}`).join('\n');
   const opcoes = lista ? `\nOPÇÕES (responda copiando uma delas, exatamente):\n${lista}` : '';
   const usuario = [
@@ -257,9 +279,18 @@ export async function responderPergunta(curriculoMd: string, vaga: { titulo: str
     `${pergunta.rotulo}${opcoes}`,
   ].join('\n');
 
-  const bruto = await completar(SYSTEM_RESPOSTA, usuario);
+  const bruto = await completar(opcoes_.cauteloso ? SYSTEM_RESPOSTA + REGRA_CAUTELOSA : SYSTEM_RESPOSTA, usuario);
   const texto = limparResposta(bruto);
   if (!texto || PULAR.test(texto)) return null;
+  // "Marque todas que se aplicam": o motor espera "A | B". Casar só uma deixava a resposta pela metade.
+  if (pergunta.tipo === 'multipla' && pergunta.opcoes?.length) {
+    const escolhidas = texto
+      .split('|')
+      .map(t => casarComOpcao(pergunta.opcoes ?? [], t))
+      .filter((o): o is string => !!o);
+    const unicas = [...new Set(escolhidas)];
+    return unicas.length ? unicas.join(' | ') : null;
+  }
   if (pergunta.opcoes?.length) return casarComOpcao(pergunta.opcoes, texto);
   if (texto.length > MAX_RESPOSTA) return null;
   if (CHEIRO_DE_IA.test(texto)) return null;

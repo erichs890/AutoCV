@@ -14,7 +14,7 @@ import { vagaspjVencido } from './platforms/vagaspj/busca.ts';
 import { inferirSenioridade } from './resume/analyzer.ts';
 import { esperaDaTentativa, falhaRepetivel, MAX_TENTATIVAS } from './falhas.ts';
 import { fecharNavegador } from './browser.ts';
-import { categoriaSensivel } from '../src/sensiveis.ts';
+import { DADO_PESSOAL, categoriaSensivel } from '../src/sensiveis.ts';
 import { perguntaSoDestaVaga, textoIntervalo } from '../src/dados.ts';
 
 const registrar = log.registrar;
@@ -381,12 +381,17 @@ const MAX_RESPOSTAS_IA = 8;
  * são deduzidos do currículo, nem pela IA. Essas seguem a política de Configurações › Autodeclaração.
  * Resposta longa, com cheiro de IA, ou opção que não existe na vaga é recusada e a vaga pausa como antes.
  */
-async function responderComIA(vaga: Vaga): Promise<boolean> {
+async function responderComIA(vaga: Vaga, cauteloso: boolean): Promise<boolean> {
   if (vaga.pendencia?.tipo !== 'pergunta') return false;
   const q = vaga.pendencia.pergunta;
   const sensivel = categoriaSensivel(q.rotulo);
   if (sensivel) {
     registrar('aguardo', `"${vaga.titulo}": ${sensivel.rotulo.toLowerCase()} é autodeclaração — a IA não responde isso. Defina em Configurações › Autodeclaração ou responda aqui.`);
+    return false;
+  }
+  // Dado pessoal não é dúvida de currículo, é fato: a IA não chuta CPF, endereço nem pretensão. Nem chega nela.
+  if (DADO_PESSOAL.test(q.rotulo)) {
+    registrar('aguardo', `"${vaga.titulo}" pergunta um dado pessoal ("${q.rotulo.slice(0, 50)}") — isso é com você, a IA não adivinha.`);
     return false;
   }
   const usadas = respostasIA.get(vaga.id) ?? 0;
@@ -398,9 +403,14 @@ async function responderComIA(vaga: Vaga): Promise<boolean> {
   if (!curriculo || !iaAtiva()) return false;
 
   try {
-    const resposta = await responderPergunta(curriculo, vaga, { rotulo: q.rotulo, tipo: q.tipo, opcoes: q.opcoes });
+    const resposta = await responderPergunta(curriculo, vaga, { rotulo: q.rotulo, tipo: q.tipo, opcoes: q.opcoes }, { cauteloso });
     if (!resposta) {
-      registrar('aguardo', `A IA não deu uma resposta confiável para "${q.rotulo.slice(0, 60)}"; ficou para você.`);
+      registrar(
+        'aguardo',
+        cauteloso
+          ? `"${q.rotulo.slice(0, 60)}": a IA não achou no seu currículo o que essa pergunta pede e preferiu não chutar. Ficou para você.`
+          : `A IA não deu uma resposta confiável para "${q.rotulo.slice(0, 60)}"; ficou para você.`,
+      );
       return false;
     }
     respostasIA.set(vaga.id, usadas + 1);
@@ -460,7 +470,8 @@ async function processarUma(proxima: Vaga): Promise<boolean> {
       respostasIA.delete(proxima.id);
     }
     // Sem Piedade: a pergunta nova não para a fila — a IA responde e a vaga volta para o início do fluxo
-    if (depois?.status === 'aguardando_pergunta' && ler.automacao().modoPerguntas === 'sem_piedade') await responderComIA(depois);
+    const modoP = ler.automacao().modoPerguntas;
+    if (depois?.status === 'aguardando_pergunta' && modoP !== 'manual') await responderComIA(depois, modoP === 'duvida');
     // Pendência (pergunta/aprovação) não bloqueia a fila: seguimos para a próxima vaga na mesma rodada
     return true;
   } catch (e) {
