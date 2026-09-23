@@ -1,4 +1,4 @@
-import type { Plataforma, StatusVaga } from './types.ts';
+import type { Conexao, Plataforma, StatusVaga } from './types.ts';
 
 // Catálogo fixo do produto. InHire e Indeed têm adapter no núcleo; as outras ficam "Indisponível" até alguém
 // escrever o adapter (ver agentlog.md §5). `site` e `nota` ficam reservados aqui para quando chegar a vez delas.
@@ -200,6 +200,15 @@ export function perguntaSoDestaVaga(rotulo: string, empresa = ''): boolean {
 
 /** "10 s", "1 min", "8 min", "1 min 30 s": rótulo legível para uma espera em segundos. */
 export const textoIntervalo = (s: number) => (s < 60 ? `${s} s` : s % 60 === 0 ? `${s / 60} min` : `${Math.floor(s / 60)} min ${s % 60} s`);
+
+/**
+ * A plataforma desta vaga está no foco da automação? (Automação › "Plataformas que entram na fila".)
+ *
+ * Um só interruptor decide duas coisas de propósito: o robô não enfileira a vaga e ela sai da lista por padrão.
+ * Focar em uma plataforma sem limpar a tela não seria foco nenhum. Nada é apagado — a lista tem um botão para
+ * mostrar as que ficaram de fora. Conexão sem o campo = no foco (as conexões criadas antes disto continuam valendo).
+ */
+export const plataformaNoFoco = (conexoes: Record<string, Conexao>, plataforma: string) => conexoes[plataforma]?.enviar !== false;
 
 export const NIVEIS = ['Estágio', 'Júnior', 'Pleno', 'Sênior', 'Liderança'];
 export const AREAS = ['Tecnologia da Informação', 'Dados e Analytics', 'Suporte e Infraestrutura', 'Comercial e Vendas', 'Financeiro e Contábil', 'Recursos Humanos', 'Marketing', 'Administrativo'];

@@ -779,5 +779,15 @@ assert.equal(faixaDeCusto(maisBarato, gem).rotulo, 'Mais barato');
 assert.equal(faixaDeCusto(maisCaro, gem).rotulo, 'Mais caro');
 console.log(`✓ Modelos de IA: ${MODELOS.gemini.opcoes.length} Gemini + ${MODELOS.anthropic.opcoes.length} Claude, lista única e sem modelo aposentado`);
 
+// 10) Foco por plataforma: um interruptor só decide a fila E a lista de vagas
+const { plataformaNoFoco } = await import('../src/dados.ts');
+const conexoesTeste = { inhire: { conectadaEm: 'x' }, vagaspj: { conectadaEm: 'x', enviar: false }, indeed: { conectadaEm: 'x', enviar: true } };
+assert.equal(plataformaNoFoco(conexoesTeste, 'inhire'), true, 'conexão sem o campo continua no foco (as criadas antes disto)');
+assert.equal(plataformaNoFoco(conexoesTeste, 'vagaspj'), false);
+assert.equal(plataformaNoFoco(conexoesTeste, 'indeed'), true);
+assert.equal(plataformaNoFoco(conexoesTeste, 'gupy'), true, 'plataforma sem conexão não é o que este filtro resolve');
+assert.equal(plataformaNoFoco({}, 'inhire'), true);
+console.log('✓ Foco por plataforma: mesma regra para a fila e para a lista');
+
 await fecharNavegador();
 console.log('\nTudo certo.');

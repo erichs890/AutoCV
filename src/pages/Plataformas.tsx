@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { Building2, Plug, Plus, RadarIcon, Search, Trash2, Unplug } from 'lucide-react';
 import Panel from '../components/Panel';
 import { useEstado } from '../estado';
@@ -54,20 +55,6 @@ export default function Plataformas() {
     } finally {
       setEntrando(false);
     }
-  }
-
-  /**
-   * Liga/desliga o envio por uma plataforma sem desconectá-la: ela continua sendo varrida e as vagas continuam
-   * aparecendo na lista — só não entram na fila do robô. Mora na própria conexão para não existir um segundo
-   * lugar dizendo quais plataformas valem.
-   */
-  async function alternarEnvio(id: string) {
-    const conexao = estado.conexoes[id];
-    if (!conexao) return;
-    const enviar = conexao.enviar === false;
-    await salvar({ conexoes: { ...estado.conexoes, [id]: { ...conexao, enviar } } });
-    const nome = PLATAFORMAS.find(p => p.id === id)?.nome ?? id;
-    registrar(enviar ? 'sucesso' : 'alerta', enviar ? `O robô volta a enviar currículo pelo ${nome}.` : `O robô para de enviar currículo pelo ${nome} (as vagas continuam aparecendo).`);
   }
 
   async function adicionar(e: FormEvent<HTMLFormElement>) {
@@ -159,16 +146,14 @@ export default function Plataformas() {
                         <span className="sr-only"> de {p.nome}</span>
                       </a>
                     )}
-                    {conexao && p.disponivel && (
-                      <label className="flex cursor-pointer items-start gap-2 rounded-[7px] border border-panel-border bg-page-bg px-2.5 py-2">
-                        <input type="checkbox" className="mt-0.5 size-3.5 shrink-0 accent-green-deep" checked={conexao.enviar !== false} onChange={() => alternarEnvio(p.id)} />
-                        <span className="text-[11px] leading-tight">
-                          <span className="block font-bold">Enviar currículo por aqui</span>
-                          <span className="block text-ink-soft">
-                            {conexao.enviar === false ? 'Desligado: acha as vagas, mas o robô não se candidata.' : 'O robô se candidata às vagas desta plataforma.'}
-                          </span>
-                        </span>
-                      </label>
+                    {/* Espelho: quem edita o foco é a Automação (uma fonte por campo) */}
+                    {conexao && p.disponivel && conexao.enviar === false && (
+                      <p className="rounded-[7px] border border-dashed border-panel-border bg-page-bg px-2.5 py-2 text-[11px] leading-tight text-ink-soft">
+                        <strong className="text-ink">Fora do foco da automação.</strong> Continua conectada e sendo varrida, mas as vagas dela não entram na fila nem na lista.{' '}
+                        <Link to="/automacao" className="font-bold text-blue-dark underline">
+                          Mudar em Automação
+                        </Link>
+                      </p>
                     )}
                     <div className="mt-auto">
                       {conexao && p.disponivel ? (

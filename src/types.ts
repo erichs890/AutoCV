@@ -88,8 +88,9 @@ export interface Conexao {
   conectadaEm: string; // ISO
   usuario?: string;
   /**
-   * O robô pode enviar currículo por esta plataforma? Ausente = sim (as conexões antigas continuam valendo).
-   * Desligado, ela continua sendo varrida e as vagas continuam aparecendo na lista — só não entram na fila.
+   * A plataforma está no foco da automação? Ausente = sim (as conexões antigas continuam valendo).
+   * Desligada, ela continua sendo varrida e as vagas continuam gravadas, mas não entram na fila e saem da
+   * lista por padrão (há um botão para mostrá-las). Editável só em Automação; Plataformas espelha.
    * Fica aqui, e não em `automacao`, para não existir um segundo lugar dizendo quais plataformas valem.
    */
   enviar?: boolean;

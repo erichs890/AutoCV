@@ -27,7 +27,7 @@ import Modal from '../components/Modal';
 import { statusRobo } from '../components/Sidebar';
 import { useEstado, type ConfigAutomacao } from '../estado';
 import { post, urlArquivo } from '../api';
-import { MODELO, PLATAFORMAS, REGIMES, REGIME_VAGA, STATUS_VAGA, formatarTamanho, getPlataforma, perguntaSoDestaVaga, textoIntervalo } from '../dados';
+import { MODELO, PLATAFORMAS, REGIMES, plataformaNoFoco, REGIME_VAGA, STATUS_VAGA, formatarTamanho, getPlataforma, perguntaSoDestaVaga, textoIntervalo } from '../dados';
 
 const titulos = { ativo: 'Robô ligado', pausado: 'Robô parado', erro: 'Robô com erro' };
 const coresLog: Record<LinhaLog['tipo'], string> = { sucesso: 'text-aqua', info: 'text-white/85', aguardo: 'text-amber', erro: 'text-orange-light', alerta: 'text-amber' };
@@ -90,6 +90,7 @@ export default function Automacao() {
   const [adaptacaoDe, setAdaptacaoDe] = useState<string | null>(null); // vaga cujo currículo adaptado está aberto
   const [mostrarIgnoradas, setMostrarIgnoradas] = useState(false);
   const [mostrarEnviadas, setMostrarEnviadas] = useState(false);
+  const [mostrarForaDoFoco, setMostrarForaDoFoco] = useState(false);
   const set = (mudanca: Partial<ConfigAutomacao>) => setCfg(c => ({ ...c, ...mudanca }));
 
   const conectadas = PLATAFORMAS.filter(p => estado.conexoes[p.id]);
@@ -99,10 +100,14 @@ export default function Automacao() {
   const abertas = estado.vagas.filter(v => v.status !== 'encerrada');
   // Vaga já enviada sai da lista: o trabalho com ela acabou, e ficar olhando currículo que já foi só atrapalha
   // quem procura o que ainda falta. O histórico completo fica no Painel, em "Últimas candidaturas".
-  const enviadas = abertas.filter(v => v.status === 'enviada');
-  const ignoradas = abertas.filter(v => v.status === 'ignorada');
-  const encontradas = abertas.filter(v => v.status !== 'ignorada' && v.status !== 'enviada');
-  const listadas = [...encontradas, ...(mostrarIgnoradas ? ignoradas : []), ...(mostrarEnviadas ? enviadas : [])].sort((a, b) => b.score - a.score);
+  const noFoco = (v: Vaga) => plataformaNoFoco(estado.conexoes, v.plataforma);
+  // Plataforma fora do foco sai da lista junto com a fila: focar sem limpar a tela não seria foco nenhum.
+  // Nada é apagado — o rodapé tem um botão para mostrá-las.
+  const foraDoFoco = abertas.filter(v => !noFoco(v) && v.status !== 'ignorada' && v.status !== 'enviada');
+  const enviadas = abertas.filter(v => v.status === 'enviada' && noFoco(v));
+  const ignoradas = abertas.filter(v => v.status === 'ignorada' && noFoco(v));
+  const encontradas = abertas.filter(v => v.status !== 'ignorada' && v.status !== 'enviada' && noFoco(v));
+  const listadas = [...encontradas, ...(mostrarIgnoradas ? ignoradas : []), ...(mostrarEnviadas ? enviadas : []), ...(mostrarForaDoFoco ? foraDoFoco : [])].sort((a, b) => b.score - a.score);
 
   async function guardar(ligar: boolean) {
     const form = document.getElementById('form-automacao') as HTMLFormElement | null;
@@ -131,6 +136,23 @@ export default function Automacao() {
       // O trabalho segue no núcleo; o log mostra o andamento e o resultado
       setTimeout(() => setReavaliando(false), 4000);
     }
+  }
+
+  /**
+   * Quais plataformas entram na fila. Um interruptor só, porque o efeito é um só: focar. A plataforma
+   * desligada não enfileira e também some da lista de vagas — continua conectada e sendo varrida, e o rodapé
+   * da lista tem um botão para ver o que ficou de fora.
+   *
+   * Grava em `conexoes`, que é a fonte de verdade de plataforma, e grava na hora: está fora do formulário,
+   * então esperar o "Salvar alterações" faria o usuário ligar o robô com a seleção antiga.
+   */
+  async function alternarFoco(id: string) {
+    const conexao = estado.conexoes[id];
+    if (!conexao) return;
+    const enviar = conexao.enviar === false;
+    await salvar({ conexoes: { ...estado.conexoes, [id]: { ...conexao, enviar } } });
+    const nome = PLATAFORMAS.find(x => x.id === id)?.nome ?? id;
+    registrar(enviar ? 'sucesso' : 'alerta', enviar ? `${nome} voltou para a fila e para a lista de vagas.` : `${nome} saiu da fila e da lista de vagas (continua conectada e sendo varrida).`);
   }
 
   /** Troca fora do formulário: grava na hora, senão o usuário mudaria e ligaria o robô com o modo antigo. */
@@ -278,6 +300,15 @@ export default function Automacao() {
               {mostrarIgnoradas ? 'Ocultar' : 'Mostrar'} {ignoradas.length} vaga(s) abaixo de {estado.automacao.scoreMinimo}% de compatibilidade
             </button>
           )}
+          {foraDoFoco.length > 0 && (
+            <button
+              type="button"
+              className="w-full border-t border-panel-border px-3.5 py-2 text-left text-[11px] font-bold text-ink-soft hover:bg-page-bg"
+              onClick={() => setMostrarForaDoFoco(m => !m)}
+            >
+              {mostrarForaDoFoco ? 'Ocultar' : 'Mostrar'} {foraDoFoco.length} vaga(s) de plataforma fora do foco
+            </button>
+          )}
           {enviadas.length > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-panel-border px-3.5 py-2">
               <button type="button" className="text-left text-[11px] font-bold text-ink-soft hover:underline" onClick={() => setMostrarEnviadas(m => !m)}>
@@ -320,20 +351,39 @@ export default function Automacao() {
                   </Link>
                 </p>
               ) : (
-                <div className="grid grid-cols-2 gap-2.5 max-lg:grid-cols-1">
-                  {conectadas.map(p => (
-                    <div key={p.id} className="flex items-center gap-2 rounded-[7px] border border-panel-border px-2.5 py-2">
-                      <span aria-hidden className={`size-2 shrink-0 rounded-full ${estado.conexoes[p.id]?.enviar === false ? 'bg-ink-soft/40' : p.cor}`} />
-                      <span className="min-w-0">
-                        <span className="block text-xs font-bold">{p.nome}</span>
-                        {/* "N empresas monitoradas" só existe no InHire; nas outras era um número emprestado */}
-                        <span className="block text-[10px] text-ink-soft">
-                          {estado.conexoes[p.id]?.enviar === false ? 'só busca — envio desligado' : p.id === 'inhire' ? `${empresasAtivas} empresa(s) monitoradas` : 'buscando e enviando'}
-                        </span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <p className="mb-2 text-[11px] text-ink-soft">
+                    Quais entram na fila. Desmarcar uma tira as vagas dela da fila <strong>e da lista acima</strong> — serve para focar em uma só. Ela continua conectada e sendo varrida, e nada é
+                    apagado.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2.5 max-lg:grid-cols-1">
+                    {conectadas.map(p => {
+                      const ativa = plataformaNoFoco(estado.conexoes, p.id);
+                      const quantas = estado.vagas.filter(v => v.plataforma === p.id && !['encerrada', 'ignorada', 'enviada'].includes(v.status)).length;
+                      return (
+                        <label
+                          key={p.id}
+                          className={`flex cursor-pointer items-center gap-2 rounded-[7px] border px-2.5 py-2 ${ativa ? 'border-panel-border' : 'border-dashed border-panel-border opacity-60'}`}
+                        >
+                          <input type="checkbox" checked={ativa} onChange={() => alternarFoco(p.id)} className="size-[15px] shrink-0 accent-green-deep" />
+                          <span aria-hidden className={`size-2 shrink-0 rounded-full ${ativa ? p.cor : 'bg-ink-soft/40'}`} />
+                          <span className="min-w-0">
+                            <span className="block text-xs font-bold">{p.nome}</span>
+                            {/* "N empresas monitoradas" só existe no InHire; nas outras era um número emprestado */}
+                            <span className="block text-[10px] text-ink-soft">
+                              {ativa ? `${quantas} vaga(s) na lista${p.id === 'inhire' ? ` · ${empresasAtivas} empresa(s) monitoradas` : ''}` : `fora do foco · ${quantas} vaga(s) escondida(s)`}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {conectadas.every(p => !plataformaNoFoco(estado.conexoes, p.id)) && (
+                    <p role="alert" className="mt-2 text-[11px] font-bold text-orange-deep">
+                      Nenhuma plataforma selecionada: o robô não tem de onde tirar vaga para a fila.
+                    </p>
+                  )}
+                </>
               )}
               {estado.curriculos.length === 0 ? (
                 <p className="mt-3 text-xs text-ink-soft">

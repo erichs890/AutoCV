@@ -7,7 +7,7 @@ import StatCard from '../components/StatCard';
 import BarChart from '../components/BarChart';
 import { useEstado } from '../estado';
 import { post } from '../api';
-import { STATUS_VAGA, getPlataforma, tempoAtras } from '../dados';
+import { STATUS_VAGA, getPlataforma, plataformaNoFoco, tempoAtras } from '../dados';
 
 const POR_PAGINA = 10;
 const pg = 'flex h-6 w-[26px] items-center justify-center rounded border text-xs font-bold tabular-nums aria-disabled:cursor-not-allowed aria-disabled:opacity-40';
@@ -22,7 +22,9 @@ export default function Painel() {
 
   const hoje = dataCurta(new Date());
   const abertas = vagas.filter(v => v.status !== 'encerrada');
-  const compativeis = abertas.filter(v => v.status !== 'ignorada').length;
+  // Conta só as plataformas no foco da automação: senão o número aqui briga com a lista da Automação
+  const compativeis = abertas.filter(v => v.status !== 'ignorada' && plataformaNoFoco(estado.conexoes, v.plataforma)).length;
+  const foraDoFoco = abertas.filter(v => !plataformaNoFoco(estado.conexoes, v.plataforma)).length;
   const empresasAtivas = estado.empresas.filter(e => e.ativo).length;
   const serie = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
@@ -42,7 +44,13 @@ export default function Painel() {
         <StatCard icon={Send} tom="bg-blue-dark" valor={envios.length} label="Candidaturas" />
         <StatCard icon={Clock} tom="bg-green-dark" valor={envios.filter(e => e.data === hoje).length} label="Envios hoje" />
         <StatCard icon={ListOrdered} tom="bg-orange" valor={fila.length} label="Vagas na fila" />
-        <StatCard icon={Target} tom="bg-purple" valor={compativeis} label="Vagas compatíveis" nota={`${abertas.length} vagas ativas no total`} />
+        <StatCard
+          icon={Target}
+          tom="bg-purple"
+          valor={compativeis}
+          label="Vagas compatíveis"
+          nota={foraDoFoco ? `${abertas.length} ativas · ${foraDoFoco} fora do foco` : `${abertas.length} vagas ativas no total`}
+        />
       </section>
       <p className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-soft max-md:-mt-1">
         <span className="inline-flex items-center gap-1">
