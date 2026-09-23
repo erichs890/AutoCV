@@ -641,6 +641,7 @@ for (const m of [
   'o questionário do InHire (form-app) não carregou: ficou em branco por 20 s',
   'sem confirmação do InHire após o envio',
   'Target page, context or browser has been closed',
+  'tela do questionário sem nada reconhecível (estrutura não reconhecida)',
 ])
   assert.ok(falhaRepetivel(m), `deveria tentar de novo: "${m}"`);
 for (const m of [
@@ -714,6 +715,11 @@ assert.ok(VAGASPJ.convencoes.final.test('Candidatar'));
 assert.ok(!VAGASPJ.convencoes.final.test('Candidatar agora'), 'o botão que só revela o formulário não pode ser lido como envio');
 assert.ok(VAGASPJ.convencoes.proximo.test('Continuar') && !VAGASPJ.convencoes.proximo.test('Voltar'));
 assert.ok(!VAGASPJ.convencoes.proximo.test('Candidatar') && !VAGASPJ.convencoes.final.test('Continuar'));
+
+// Texto real da tela de sucesso, tirado da captura de um envio de verdade (23/09/2026). Este envio foi
+// gravado como ERRO porque o clique estourou 12 s enquanto o PDF subia; a tela é a testemunha de que deu certo.
+assert.ok(VAGASPJ.convencoes.sucesso.test('TUDO CERTO Candidatura enviada A empresa já recebeu seu perfil.'), 'a tela de sucesso real tem de ser reconhecida');
+assert.ok(!VAGASPJ.convencoes.sucesso.test('Candidatura rápida Seu Nome Seu e-mail Candidatar'), 'o formulário ainda por enviar não é sucesso');
 
 // POST que saiu sem resposta: não pode voltar sozinho para a fila (seria um segundo envio na mesma vaga)
 assert.equal(motivoDoErro('x', false, 'o Vagas PJ recusou o envio (HTTP 422)'), 'o Vagas PJ recusou o envio (HTTP 422)');

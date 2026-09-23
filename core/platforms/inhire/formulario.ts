@@ -801,9 +801,21 @@ export async function detectarModo(page: Page): Promise<ModoEtapa> {
 const LIMITE_ITERACOES = 50;
 type SaidaSequencial = { status: 'concluido' | 'ensaio' } | { status: 'pergunta'; pergunta: PerguntaExtra } | { status: 'erro'; motivo: string };
 
-/** Espera o questionário renderizar algo (o form-app já ficou em branco por deploy quebrado do InHire). */
+/**
+ * Espera o questionário renderizar algo (o form-app já ficou em branco por deploy quebrado do InHire).
+ *
+ * 20 s era pouco: em 23/09/2026, 15 vagas de 4 empresas morreram aqui ou na tela seguinte. O iframe carrega
+ * uma aplicação inteira (QuillForms) de outro domínio, e desistir cedo transforma lentidão em "erro" numa
+ * candidatura que só precisava de mais alguns segundos.
+ */
+const ESPERA_QUESTIONARIO_MS = 45_000;
+
 async function esperarQuestionario(raiz: Raiz): Promise<boolean> {
-  return ate(async () => raiz.evaluate(() => document.body.innerText.trim().length > 0 || document.querySelector('input, textarea, button, [role="radio"], [role="option"]') !== null), 20000, 500);
+  return ate(
+    async () => raiz.evaluate(() => document.body.innerText.trim().length > 0 || document.querySelector('input, textarea, button, [role="radio"], [role="option"]') !== null),
+    ESPERA_QUESTIONARIO_MS,
+    500,
+  );
 }
 
 const textoVisivel = (raiz: Raiz) => raiz.evaluate(() => document.body.innerText.replace(/\s+/g, ' ').trim());
@@ -867,19 +879,26 @@ async function botaoPor(raiz: Raiz, re: RegExp): Promise<Locator | null> {
 export async function preencherSequencialGenerico(raiz: Raiz, dados: DadosCandidatura, log: Log, ensaio: boolean, etapa: EtapaDescoberta): Promise<SaidaSequencial & { respondidas: number }> {
   let respondidas = 0;
   if (!(await esperarQuestionario(raiz)))
-    return { status: 'erro', motivo: 'o questionário do InHire (form-app) não carregou: ficou em branco por 20 s. Tente de novo mais tarde ou envie esta vaga manualmente', respondidas };
+    return {
+      status: 'erro',
+      motivo: `o questionário do InHire (form-app) não carregou: ficou em branco por ${ESPERA_QUESTIONARIO_MS / 1000} s. É o InHire que está fora do ar, não a sua vaga; o robô tenta de novo sozinho`,
+      respondidas,
+    };
   const p = pagina(raiz);
 
   // ETAPA 1: boas-vindas ("Responda as perguntas para finalizar sua inscrição" → Iniciar). Ausência não é erro.
   // O botão pode ser só uma seta ("→"): na tela de boas-vindas vale o único botão visível; o clique também dá foco
   // ao iframe, que o Enter das próximas telas precisa.
   const semControles = async () => (await descobrirCampos(raiz)).length === 0 && (await escolhasVisiveis(raiz)).textos.length === 0;
-  if (SEQUENCIAL.boasVindas.test(await textoVisivel(raiz)) && (await semControles())) {
+  const naBoasVindas = async () => SEQUENCIAL.boasVindas.test(await textoVisivel(raiz)) && (await semControles());
+  // Três tentativas, não uma: o QuillForms entra com animação e o primeiro clique pode cair antes de ele
+  // responder — e aí a tela seguinte nunca chega, o que virava "estrutura não reconhecida" (23/09/2026).
+  for (let tentativa = 1; tentativa <= 3 && (await naBoasVindas()); tentativa++) {
     const iniciar = (await botaoPor(raiz, SEQUENCIAL.iniciar)) ?? (await botaoPor(raiz, /^(→|>|›)?\s*$|./));
-    if (iniciar) await iniciar.click();
+    if (iniciar) await iniciar.click().catch(() => {});
     else await p.keyboard.press('Enter');
-    log('info', 'Questionário: tela de boas-vindas, iniciando.');
-    await ate(async () => !(await semControles()) || !SEQUENCIAL.boasVindas.test(await textoVisivel(raiz)), 6000, 300);
+    log('info', `Questionário: tela de boas-vindas, iniciando${tentativa > 1 ? ` (tentativa ${tentativa})` : ''}.`);
+    await ate(async () => !(await naBoasVindas()), 12000, 300);
   }
 
   let anterior = '';

@@ -35,8 +35,15 @@ async function perguntasPrevias(vaga: Vaga): Promise<PerguntaExtra[]> {
   return perguntasCertas(schema).map(p => ({ rotulo: p.rotulo, tipo: p.tipo, opcoes: p.opcoes, obrigatoria: true }));
 }
 
-// Requisições que criam/enviam a candidatura: em modo ensaio são abortadas no navegador, como garantia dura
-const ROTAS_DE_ENVIO = ['**/job-talents/public/**', '**/forms/form/submit**', '**/responses**'];
+/**
+ * Bloqueio do ensaio (invariante 5): aborta só o que CRIA a candidatura.
+ *
+ * Antes era por glob de caminho (tudo sob `job-talents/public`), e isso derrubava junto as leituras que o questionário faz
+ * para se montar: em ensaio o iframe ficava eternamente em branco, e era por isso que o ensaio nunca conseguiu
+ * exercitar o questionário de nenhuma empresa (descoberto em 23/09/2026 investigando 15 vagas travadas nele).
+ * Agora o critério é o mesmo da prova de envio: a rota certa E um método que escreve.
+ */
+const criaCandidatura = (url: string, metodo: string) => ROTAS_ENVIO.some(r => r.re.test(url)) && /^(POST|PUT|PATCH)$/i.test(metodo);
 
 async function candidatar(vaga: Vaga, dados: DadosCandidatura, log: Log): Promise<ResultadoCandidatura> {
   const ctx = await navegador(dados.mostrarNavegador);
@@ -75,7 +82,11 @@ async function candidatar(vaga: Vaga, dados: DadosCandidatura, log: Log): Promis
   });
 
   try {
-    if (dados.ensaio) for (const rota of ROTAS_DE_ENVIO) await page.route(rota, r => r.abort());
+    if (dados.ensaio)
+      await page.route('**/*', rota => {
+        const req = rota.request();
+        return criaCandidatura(req.url(), req.method()) ? rota.abort() : rota.continue();
+      });
     log('info', `Abrindo ${vaga.url}`);
     await page.goto(vaga.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
     const apareceu = await page

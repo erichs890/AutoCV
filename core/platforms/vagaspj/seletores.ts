@@ -59,6 +59,11 @@ export const VAGASPJ = {
 export const ROTA_ENVIO = /\/candidaturas\b/i;
 export const ROTA_ENVIO_GLOB = '**/candidaturas';
 
+// O envio é um POST de página inteira com o PDF anexado: em 23/09/2026 um envio real passou dos 12 s do
+// padrão do Playwright e virou "erro" numa candidatura que o site tinha aceitado. O prazo aqui é o do
+// upload, não o de um clique.
+export const ESPERA_ENVIO_MS = 90_000;
+
 export const MAX_PDF_BYTES = 5 * 1024 * 1024; // limite que cv-upload.js aplica no navegador
 
 export const PAUSA_ENTRE_PAGINAS_MS = 400; // cortesia com o site ao abrir as vagas novas do feed

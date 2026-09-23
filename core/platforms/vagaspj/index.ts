@@ -11,7 +11,7 @@ import { ler } from '../../estado.ts';
 import { formularios } from '../../storage/db.ts';
 import { executarFormulario } from '../inhire/formulario.ts';
 import { buscarNoVagasPJ } from './busca.ts';
-import { MAX_PDF_BYTES, ROTA_ENVIO, ROTA_ENVIO_GLOB, VAGASPJ } from './seletores.ts';
+import { ESPERA_ENVIO_MS, MAX_PDF_BYTES, ROTA_ENVIO, ROTA_ENVIO_GLOB, VAGASPJ } from './seletores.ts';
 
 const buscarVagas = (perfil: PerfilBusca, cfg: ConfigAutomacao, log: Log): Promise<Vaga[]> => buscarNoVagasPJ(perfil, cfg, ler.localizacao(), log);
 
@@ -80,12 +80,18 @@ async function candidatar(vaga: Vaga, dados: DadosCandidatura, log: Log): Promis
       return; // sem anúncio e sem campo inválido: o site enviou direto
     }
     log('info', 'Dispensando o anúncio do WhatsApp para concluir o envio.');
-    await page.locator(VAGASPJ.dispensarAnuncio).click();
+    // `noWaitAfter`: este clique dispara um POST de página inteira COM o upload do PDF. Esperar a navegação
+    // dentro do clique estourava os 12 s do padrão e derrubava tudo por exceção — numa candidatura que o site
+    // tinha ACEITADO (23/09/2026: a captura do "erro" mostrava "Candidatura enviada"). O desfecho é esperado
+    // logo abaixo, com prazo de upload, em vez de virar timeout de clique.
+    await page.locator(VAGASPJ.dispensarAnuncio).click({ noWaitAfter: true, timeout: 20000 });
+    await page.waitForResponse(res => ehEnvio(res.url(), res.request().method()), { timeout: ESPERA_ENVIO_MS }).catch(() => {});
   };
 
   try {
     // Invariante 5: em ensaio a rota que cria a candidatura fica abortada no navegador
-    if (dados.ensaio) await page.route(ROTA_ENVIO_GLOB, r => r.abort());
+    // Aborta só o POST que cria a candidatura: bloquear o caminho inteiro derrubaria leituras da própria página
+    if (dados.ensaio) await page.route(ROTA_ENVIO_GLOB, rota => (ehEnvio(rota.request().url(), rota.request().method()) ? rota.abort() : rota.continue()));
     log('info', `Abrindo ${vaga.url}`);
     await page.goto(vaga.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
@@ -131,6 +137,13 @@ async function candidatar(vaga: Vaga, dados: DadosCandidatura, log: Log): Promis
   } catch (e) {
     if (envioAceito) {
       log('alerta', `A página quebrou depois do envio (${(e as Error).message.split('\n')[0]}), mas o Vagas PJ já tinha aceitado a candidatura.`);
+      return { status: 'enviada' };
+    }
+    // Rede de segurança do invariante 1: o envio pode concluir DEPOIS da exceção (upload lento). Antes de
+    // dizer "erro", pergunte à tela — foi assim que uma candidatura enviada de verdade virou erro em 23/09/2026.
+    const naTela = await page.evaluate(() => document.body.innerText).catch(() => '');
+    if (VAGASPJ.convencoes.sucesso.test(naTela)) {
+      log('alerta', `Deu erro no meio do caminho (${(e as Error).message.split('\n')[0]}), mas a tela do Vagas PJ mostra a candidatura enviada. Contando como enviada.`);
       return { status: 'enviada' };
     }
     return { status: 'erro', motivo: motivoDoErro((e as Error).message.split('\n')[0], envioTentado, recusaDoServidor), captura: await captura('vagaspj-erro') };

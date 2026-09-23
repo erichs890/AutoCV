@@ -5,9 +5,15 @@
 // fila com espera crescente; falha de conteúdo (captcha, vaga encerrada, campo que o robô não sabe preencher,
 // recusa do servidor) não se repete, porque repetir não muda o resultado.
 
-/** Falhas que costumam passar sozinhas: rede, navegador, lentidão, tela que não carregou. */
+/**
+ * Falhas que costumam passar sozinhas: rede, navegador, lentidão, tela que não carregou.
+ *
+ * "estrutura não reconhecida" entrou aqui em 23/09/2026, quando 15 vagas de 4 empresas ficaram presas nela.
+ * Repetir é seguro: esse erro vem do questionário do fluxo condicional, em que o talento só nasce no fim — se
+ * a candidatura já tivesse sido aceita, a prova de rede teria transformado o desfecho em "enviada".
+ */
 export const TRANSITORIO =
-  /timeout|timed out|net::|econnreset|econnrefused|etimedout|socket hang up|navegador|target (page|closed|crashed)|browser has been closed|protocol error|\b(502|503|504)\b|n[ãa]o carregou|ficou em branco|sem confirma[çc][ãa]o|n[ãa]o avan[çc]ou|n[ãa]o apareceu|n[ãa]o mostrou/i;
+  /timeout|timed out|net::|econnreset|econnrefused|etimedout|socket hang up|navegador|target (page|closed|crashed)|browser has been closed|protocol error|\b(502|503|504)\b|n[ãa]o carregou|ficou em branco|sem confirma[çc][ãa]o|n[ãa]o avan[çc]ou|n[ãa]o apareceu|n[ãa]o mostrou|estrutura n[ãa]o reconhecida/i;
 
 /** Falhas de conteúdo: tentar de novo dá exatamente o mesmo resultado (e algumas seriam perigosas de repetir). */
 export const PERMANENTE =
