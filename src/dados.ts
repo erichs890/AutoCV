@@ -1,7 +1,5 @@
 import type { Conexao, Plataforma, StatusVaga } from './types.ts';
 
-// Catálogo fixo do produto. InHire e Indeed têm adapter no núcleo; as outras ficam "Indisponível" até alguém
-// escrever o adapter (ver agentlog.md §5). `site` e `nota` ficam reservados aqui para quando chegar a vez delas.
 // Catálogo do produto: só plataformas em que vale a pena automatizar. O critério que decidiu a poda de
 // 21/09/2026 é um só — **a candidatura tem de acontecer dentro da plataforma**. Site que redireciona para o
 // formulário da empresa não tem "um adapter": tem um adapter por empresa, para sempre. Saíram daqui os
@@ -38,8 +36,29 @@ export const PLATAFORMAS: Plataforma[] = [
     cor: 'bg-blue-dark',
     disponivel: false,
     site: 'https://portal.gupy.io',
-    nota: 'A próxima a valer o esforço: maior fatia das vagas de tecnologia no Brasil, candidatura dentro da plataforma e uma conta só reaproveitada em todas as empresas. O formulário é longo e tem pergunta eliminatória — que é justamente o que o motor adaptativo e o Sem Piedade já resolvem.',
+    nota: 'Maior fatia das vagas de tecnologia no Brasil e a listagem é pública, mas verificado em 23/09/2026: candidatar EXIGE conta (o botão nasce desabilitado e o fluxo chama a tela de login). Fica atrás das que não pedem login.',
   },
+  {
+    id: 'divulgavagas',
+    regiao: 'brasil',
+    nome: 'Divulga Vagas',
+    sigla: 'dv',
+    cor: 'bg-aqua',
+    disponivel: false,
+    site: 'https://divulgavagas.com.br',
+    nota: 'Sem login: o formulário é um POST multipart com o PDF e a lista sai do sitemap. Tem uma página de aviso entre a vaga e o formulário, como o anúncio do Vagas PJ.',
+  },
+  {
+    id: 'quickin',
+    regiao: 'brasil',
+    nome: 'Quickin',
+    sigla: 'qk',
+    cor: 'bg-purple',
+    disponivel: false,
+    site: 'https://jobs.quickin.io',
+    nota: 'ATS com 628 empresas num índice público, sem login e sem captcha. Os campos não têm name=, só id — precisa de convenção própria.',
+  },
+
   {
     id: 'vagas',
     regiao: 'brasil',
@@ -80,6 +99,27 @@ export const PLATAFORMAS: Plataforma[] = [
     disponivel: true,
     site: 'https://br.indeed.com',
     nota: 'Login manual uma vez; a sessão fica no perfil do navegador do robô. Semiautomático por construção: o Indeed bloqueia navegador oculto e desafia cargas seguidas, então é uma varredura por dia, em janela visível, e o robô para e chama você diante de um bloqueio.',
+  },
+
+  {
+    id: 'workable',
+    regiao: 'internacional',
+    nome: 'Workable',
+    sigla: 'wk',
+    cor: 'bg-green-deep',
+    disponivel: false,
+    site: 'https://jobs.workable.com',
+    nota: 'Busca pública entre empresas e, por vaga, um schema JSON que já separa campo fixo de pergunta da empresa. Sem login; o envio passa por um Turnstile invisível.',
+  },
+  {
+    id: 'arbeitnow',
+    regiao: 'internacional',
+    nome: 'Arbeitnow',
+    sigla: 'an',
+    cor: 'bg-amber',
+    disponivel: false,
+    site: 'https://www.arbeitnow.com',
+    nota: 'API pública e formulário próprio sem captcha nenhum, no mesmo formato do Vagas PJ. Acervo alemão: poucas vagas remotas.',
   },
 
   {
