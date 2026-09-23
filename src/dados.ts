@@ -104,9 +104,15 @@ export const REGIOES: { id: Plataforma['regiao']; titulo: string; texto: string 
 export const getPlataforma = (id: string): Plataforma => PLATAFORMAS.find(p => p.id === id) ?? PLATAFORMAS[0];
 
 // ─── Modelos de IA ───────────────────────────────────────────────────────────
-// Preços em dólares por 1 milhão de tokens, conferidos nas tabelas oficiais em 20/09/2026
-// (ai.google.dev/gemini-api/docs/pricing e a referência da API da Anthropic). São a ordem de grandeza para
-// comparar as opções, não uma cobrança: quem cobra é o provedor, com a sua própria chave.
+// Conferido em 23/09/2026 contra a API (models.list + uma chamada real em cada um) e a tabela oficial de preços.
+// Preços em dólares por 1 milhão de tokens: são a ordem de grandeza para comparar, não uma cobrança — quem cobra
+// é o provedor, com a sua própria chave.
+//
+// Esta lista é a ÚNICA fonte: `core/ia.ts` deriva dela as opções válidas e o padrão (o primeiro `recomendado`).
+//
+// O Google APOSENTA modelo sem tirar da listagem: `gemini-2.5-flash` e `gemini-2.5-pro` ainda aparecem em
+// models.list, mas uma chamada real devolve 404 "no longer available to new users" — por isso saíram daqui.
+// É a segunda vez que isso acontece (antes foi o 2.0 Flash). `migrarModelo` tira do buraco quem já estava neles.
 export interface ModeloIA {
   id: string;
   situacao: 'recomendado' | 'estavel' | 'preview';
@@ -118,12 +124,26 @@ export interface ModeloIA {
 export const MODELOS_IA: Record<'gemini' | 'anthropic', ModeloIA[]> = {
   gemini: [
     { id: 'gemini-3.8-flash', situacao: 'recomendado', entrada: 0.75, saida: 3.75, nota: 'O mais recente e capaz da linha Flash. Preço promocional até 31/12/2026 (depois dobra).' },
-    { id: 'gemini-3.5-flash', situacao: 'estavel', entrada: 1.5, saida: 9, nota: 'Geração anterior; hoje custa mais que o 3.8 e rende menos.' },
+    {
+      id: 'gemini-flash-latest',
+      situacao: 'estavel',
+      entrada: 0.75,
+      saida: 3.75,
+      nota: 'Aponta sempre para o Flash mais novo, sozinho — é o que não enferruja quando o Google aposenta um modelo. Em troca, o modelo por trás pode mudar sem aviso, e o preço acompanha.',
+    },
+    { id: 'gemini-3.7-flash', situacao: 'estavel', entrada: 0.75, saida: 3.75, nota: 'Flash da geração anterior, pelo mesmo preço do 3.8.' },
+    { id: 'gemini-3.6-flash', situacao: 'estavel', entrada: 0.75, saida: 3.75, nota: 'É para onde o Google manda quem usava o 2.5 Flash. Mesmo preço do 3.8.' },
+    { id: 'gemini-3.5-flash', situacao: 'estavel', entrada: 1.5, saida: 9, nota: 'Custa o dobro do 3.8 e rende menos; só vale se os mais novos estiverem instáveis.' },
     { id: 'gemini-3.5-flash-lite', situacao: 'estavel', entrada: 0.3, saida: 2.5, nota: 'Barato e rápido, para adaptar muitos currículos gastando pouco.' },
+    { id: 'gemini-flash-lite-latest', situacao: 'estavel', entrada: 0.3, saida: 2.5, nota: 'O mesmo que o Flash-Lite, sempre na versão mais nova. O preço acompanha o modelo do momento.' },
     { id: 'gemini-3.1-flash-lite', situacao: 'estavel', entrada: 0.25, saida: 1.5, nota: 'O mais barato da lista. Menos capaz em textos longos.' },
-    { id: 'gemini-3.1-pro-preview', situacao: 'preview', entrada: 2, saida: 12, nota: 'O mais caro e o mais capaz do Gemini. Em preview: pode mudar ou sair do ar sem aviso.' },
-    { id: 'gemini-2.5-flash', situacao: 'estavel', entrada: 0.3, saida: 2.5, nota: 'Geração antiga, ainda em pé e barata.' },
-    { id: 'gemini-2.5-pro', situacao: 'estavel', entrada: 1.25, saida: 10, nota: 'Pro da geração antiga; caro para o que entrega hoje.' },
+    {
+      id: 'gemini-3.1-pro-preview',
+      situacao: 'preview',
+      entrada: 2,
+      saida: 12,
+      nota: 'O mais capaz do Gemini e o mais caro. Em preview: pode mudar ou sair do ar sem aviso, e a cota gratuita dele acaba rápido.',
+    },
   ],
   anthropic: [
     { id: 'claude-opus-5', situacao: 'recomendado', entrada: 5, saida: 25, nota: 'O mais capaz do Claude — melhor para respeitar a regra de não inventar nada.' },
@@ -131,6 +151,9 @@ export const MODELOS_IA: Record<'gemini' | 'anthropic', ModeloIA[]> = {
     { id: 'claude-haiku-4-5', situacao: 'estavel', entrada: 1, saida: 5, nota: 'O mais barato do Claude, para volume.' },
   ],
 };
+
+/** Modelo que o app usa quando ninguém escolheu (ou quando o escolhido morreu): o primeiro `recomendado`. */
+export const modeloPadrao = (provedor: 'gemini' | 'anthropic') => (MODELOS_IA[provedor].find(m => m.situacao === 'recomendado') ?? MODELOS_IA[provedor][0]).id;
 
 export const SITUACAO_MODELO: Record<ModeloIA['situacao'], { rotulo: string; classe: string }> = {
   recomendado: { rotulo: 'Recomendado', classe: 'bg-green-deep text-white' },

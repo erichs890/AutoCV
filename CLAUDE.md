@@ -5,7 +5,7 @@ App local que acha vagas (InHire, Indeed, Vagas PJ) e candidata sozinho. Front V
 ## Rodar
 
 `npm run core` (núcleo, :4780) + `npm run dev` (UI, :5173) — ou `start.bat`. Dados em `%LOCALAPPDATA%\AutoCV`.
-Antes de commitar: `npm run check` (52 verificações) e `npm run build` (biome + tsc + vite).
+Antes de commitar: `npm run check` (53 verificações) e `npm run build` (biome + tsc + vite).
 
 ## Fluxo
 
@@ -37,6 +37,7 @@ varredura → score → fila → `executarCandidatura` → adapter → **preench
 | plataforma ligada **e se o robô envia por ela** (`enviar`) | `conexoes` |
 | respostas de autodeclaração | `sensiveis` |
 | perguntas das empresas | `perguntas` |
+| modelos de IA (id, preço, nota, padrão) | `MODELOS_IA` em `src/dados.ts` — `core/ia.ts` deriva dela |
 
 Nunca criar um segundo lugar que edite o mesmo campo. Campo que a UI mostra e o núcleo não lê é mentira: ou implementa, ou remove.
 

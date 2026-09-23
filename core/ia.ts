@@ -1,19 +1,17 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { ConfigIA, ProvedorIA } from '../src/types.ts';
+import { MODELOS_IA, modeloPadrao } from '../src/dados.ts';
 import { kv } from './storage/db.ts';
 import { similaridade } from './resume/texto.ts';
 
 // Provedor de IA para a adaptação de currículo. A chave fica só no SQLite local (%LOCALAPPDATA%\AutoCV)
 // e nunca é devolvida ao front — o front só vê se existe e os 4 últimos caracteres.
 
+// As opções válidas e o padrão saem de `src/dados.ts` — uma lista só, com id, preço e nota juntos.
+// Duas listas em arquivos diferentes já divergiram antes: a do front oferecia modelo que o núcleo recusava.
 export const MODELOS: Record<Exclude<ProvedorIA, 'nenhum'>, { padrao: string; opcoes: string[] }> = {
-  // Gemini conferido na documentação oficial em 20/09/2026 (ai.google.dev/gemini-api/docs/models):
-  // 3.8 Flash é o mais recente estável; 3.1 Pro ainda é preview; o 2.0 Flash foi desligado e saiu da lista.
-  gemini: {
-    padrao: 'gemini-3.8-flash',
-    opcoes: ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview', 'gemini-2.5-flash', 'gemini-2.5-pro'],
-  },
-  anthropic: { padrao: 'claude-opus-5', opcoes: ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'] },
+  gemini: { padrao: modeloPadrao('gemini'), opcoes: MODELOS_IA.gemini.map(m => m.id) },
+  anthropic: { padrao: modeloPadrao('anthropic'), opcoes: MODELOS_IA.anthropic.map(m => m.id) },
 };
 
 interface IAArmazenada {

@@ -746,5 +746,38 @@ assert.deepEqual(
 );
 console.log('✓ Campos em português, LinkedIn em campo url e tipo de CNPJ');
 
+// 9) Catálogo de modelos de IA: uma lista só, sem modelo aposentado
+const { MODELOS_IA, modeloPadrao, faixaDeCusto } = await import('../src/dados.ts');
+const { MODELOS } = await import('./ia.ts');
+
+for (const provedor of ['gemini', 'anthropic'] as const) {
+  const lista = MODELOS_IA[provedor];
+  const ids = lista.map(m => m.id);
+  assert.equal(new Set(ids).size, ids.length, `${provedor}: id repetido no catálogo`);
+  // O núcleo não pode conhecer uma lista diferente da que a tela oferece: já aconteceu de divergirem
+  assert.deepEqual(MODELOS[provedor].opcoes, ids, `${provedor}: core/ia.ts divergiu de src/dados.ts`);
+  assert.ok(ids.includes(MODELOS[provedor].padrao), `${provedor}: o padrão tem de estar entre as opções`);
+  assert.equal(MODELOS[provedor].padrao, modeloPadrao(provedor));
+  assert.equal(lista.filter(m => m.situacao === 'recomendado').length, 1, `${provedor}: deve haver exatamente um recomendado`);
+  for (const m of lista) {
+    assert.ok(m.entrada > 0 && m.saida > 0, `${m.id}: preço faltando`);
+    assert.ok(m.saida >= m.entrada, `${m.id}: saída mais barata que entrada é suspeito`);
+    assert.ok(m.nota.length > 20, `${m.id}: sem nota que ajude a escolher`);
+  }
+}
+
+// Aposentados de verdade: conferido em 23/09/2026 com uma chamada real, que devolve
+// 404 "no longer available to new users". Ficam listados em models.list, então só o teste segura.
+for (const morto of ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite'])
+  assert.ok(!MODELOS.gemini.opcoes.includes(morto), `${morto} foi aposentado pelo Google e não pode ser oferecido`);
+
+// A faixa de custo tem de separar o mais barato do mais caro da própria lista
+const gem = MODELOS_IA.gemini;
+const maisBarato = [...gem].sort((a, b) => a.saida - b.saida)[0];
+const maisCaro = [...gem].sort((a, b) => b.saida - a.saida)[0];
+assert.equal(faixaDeCusto(maisBarato, gem).rotulo, 'Mais barato');
+assert.equal(faixaDeCusto(maisCaro, gem).rotulo, 'Mais caro');
+console.log(`✓ Modelos de IA: ${MODELOS.gemini.opcoes.length} Gemini + ${MODELOS.anthropic.opcoes.length} Claude, lista única e sem modelo aposentado`);
+
 await fecharNavegador();
 console.log('\nTudo certo.');
