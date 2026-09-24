@@ -54,9 +54,9 @@ export const PLATAFORMAS: Plataforma[] = [
     nome: 'Quickin',
     sigla: 'qk',
     cor: 'bg-purple',
-    disponivel: false,
+    disponivel: true,
     site: 'https://jobs.quickin.io',
-    nota: 'ATS com 628 empresas num índice público, sem login e sem captcha. Os campos não têm name=, só id — precisa de convenção própria.',
+    nota: 'ATS brasileiro com 628 empresas em sitemap público, sem login. Os campos usam id em vez de name. Formulário direto com anexo de currículo e envio confirmado na API.',
   },
 
   {
@@ -107,9 +107,9 @@ export const PLATAFORMAS: Plataforma[] = [
     nome: 'Workable',
     sigla: 'wk',
     cor: 'bg-green-deep',
-    disponivel: false,
+    disponivel: true,
     site: 'https://jobs.workable.com',
-    nota: 'Busca pública entre empresas e, por vaga, um schema JSON que já separa campo fixo de pergunta da empresa. Sem login; o envio passa por um Turnstile invisível.',
+    nota: 'Busca pública via API REST com suporte a vagas remotas internacionais e no Brasil. Schema de formulário por vaga para perguntas prévias, e candidatura via modal com confirmação de rede.',
   },
   {
     id: 'arbeitnow',
@@ -117,9 +117,9 @@ export const PLATAFORMAS: Plataforma[] = [
     nome: 'Arbeitnow',
     sigla: 'an',
     cor: 'bg-amber',
-    disponivel: false,
+    disponivel: true,
     site: 'https://www.arbeitnow.com',
-    nota: 'API pública e formulário próprio sem captcha nenhum, no mesmo formato do Vagas PJ. Acervo alemão: poucas vagas remotas.',
+    nota: 'API pública com vagas de tecnologia europeias e remotas. Candidatura adaptativa em múltiplos formatos (Personio, Ashby, Greenhouse) com preenchimento automático.',
   },
 
   {

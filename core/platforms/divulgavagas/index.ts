@@ -53,7 +53,7 @@ async function candidatar(vaga: Vaga, dados: DadosCandidatura, log: Log): Promis
 
   try {
     if (dados.ensaio) await page.route(ROTA_ENVIO_GLOB, rota => (ehEnvio(rota.request().url(), rota.request().method()) ? rota.abort() : rota.continue()));
-    const url = DIVULGA.formulario(id);
+    const url = vaga.url.startsWith('http://127.0.0.1') || vaga.url.startsWith('http://localhost') ? vaga.url : DIVULGA.formulario(id);
     log('info', `Abrindo ${url}`);
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
@@ -100,12 +100,18 @@ async function candidatar(vaga: Vaga, dados: DadosCandidatura, log: Log): Promis
     const alvo = (await botao.count()) ? botao : page.locator(`${DIVULGA.form} button[type="submit"], ${DIVULGA.form} input[type="submit"]`).first();
     log('info', 'Enviando currículo.');
     // `noWaitAfter`: o POST leva o PDF junto e a espera da navegação dentro do clique estoura o padrão
+    const respPromise = page.waitForResponse(res => ehEnvio(res.url(), res.request().method()), { timeout: ESPERA_ENVIO_MS }).catch(() => null);
     await alvo.click({ noWaitAfter: true, timeout: 20000 });
-    await page.waitForResponse(res => ehEnvio(res.url(), res.request().method()), { timeout: ESPERA_ENVIO_MS }).catch(() => {});
-    await page
-      .waitForFunction(re => new RegExp(re, 'i').test(document.body.innerText), DIVULGA.sucesso.source, { timeout: 15000 })
-      .then(() => true)
-      .catch(() => false);
+
+    if (!envioAceito && !recusa) {
+      await respPromise;
+    }
+    if (!envioAceito && !recusa) {
+      await page
+        .waitForFunction(re => new RegExp(re, 'i').test(document.body.innerText), DIVULGA.sucesso.source, { timeout: 15000 })
+        .then(() => true)
+        .catch(() => false);
+    }
 
     if (recusa) return { status: 'erro', motivo: recusa, captura: await captura('divulga-erro') };
     if (envioAceito) return { status: 'enviada' };
