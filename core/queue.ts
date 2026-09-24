@@ -14,6 +14,7 @@ import { vagaspjVencido } from './platforms/vagaspj/busca.ts';
 import { inferirSenioridade } from './resume/analyzer.ts';
 import { esperaDaTentativa, falhaRepetivel, MAX_TENTATIVAS } from './falhas.ts';
 import { fecharNavegador } from './browser.ts';
+import { sessaoValida } from './sessao.ts';
 import { DADO_PESSOAL, categoriaSensivel } from '../src/sensiveis.ts';
 import { perguntaSoDestaVaga, textoIntervalo } from '../src/dados.ts';
 
@@ -174,7 +175,7 @@ const modeloAceito = (v: Vaga, cfg: ReturnType<typeof ler.automacao>) => v.model
  * Vale só para a fila automática: clicar em "Candidatar" numa vaga é um ato seu, e um filtro do robô não
  * manda em você. Conexão sem o campo = pode, para as conexões criadas antes disto continuarem funcionando.
  */
-export const plataformaEnviaCurriculo = (v: Vaga) => ler.conexoes()[v.plataforma]?.enviar !== false;
+export const plataformaEnviaCurriculo = (v: Vaga) => ler.conexoes()[v.plataforma]?.enviar !== false && sessaoValida(v.plataforma);
 
 /**
  * Vaga que a fila pode pegar.
@@ -246,7 +247,13 @@ export function enfileirarCompativeis(motivo: string): number {
   if (!candidatas.length) {
     // "liguei o robô e a fila continua vazia": se o que barrou foi o filtro de plataformas, diga isso
     const barradas = todas.filter(v => podeEntrarNaFila(v, cfg) && v.score >= cfg.scoreMinimo && modeloAceito(v, cfg) && !jaCandidatado(v) && !plataformaEnviaCurriculo(v));
-    if (barradas.length) registrar('info', `${barradas.length} vaga(s) compatível(is) ficaram de fora: o envio está desligado para a plataforma delas (Plataformas).`);
+    if (barradas.length)
+      registrar(
+        'info',
+        barradas.some(v => !sessaoValida(v.plataforma))
+          ? `${barradas.length} vaga(s) compatível(is) ficaram de fora: a sessão da plataforma delas expirou (entre de novo em Plataformas).`
+          : `${barradas.length} vaga(s) compatível(is) ficaram de fora: o envio está desligado para a plataforma delas (Plataformas).`,
+      );
     // Ensaiadas esperando o ensaio ser desligado: é a explicação mais provável para "tenho vaga boa e a fila não anda"
     const ensaiadas = todas.filter(v => v.status === 'ensaio' && v.score >= cfg.scoreMinimo && !jaCandidatado(v));
     if (cfg.ensaio && ensaiadas.length) registrar('info', `${ensaiadas.length} vaga(s) já ensaiada(s) esperam o modo ensaio ser desligado para entrarem na fila de verdade.`);

@@ -5,7 +5,7 @@ App local que acha vagas (InHire, Indeed, Vagas PJ) e candidata sozinho. Front V
 ## Rodar
 
 `npm run core` (núcleo, :4780) + `npm run dev` (UI, :5173) — ou `start.bat`. Dados em `%LOCALAPPDATA%\AutoCV`.
-Antes de commitar: `npm run check` (56 verificações) e `npm run build` (biome + tsc + vite).
+Antes de commitar: `npm run check` (62 verificações) e `npm run build` (biome + tsc + vite).
 
 ## Fluxo
 
@@ -17,6 +17,8 @@ varredura → score → fila → `executarCandidatura` → adapter → **preench
 - `core/localizacao.ts` — cidade/UF/país e a regra de compatibilidade de lugar. **Uma só, para todas as plataformas**: presencial/híbrida fora do estado ou do país zera; outra cidade do estado perde 40%; remota restrita a país não escolhido zera.
 - `core/platforms/vagaspj/` — vagas PJ: lista pelo feed RSS + JSON-LD de cada página (só HTTP), candidatura num formulário de uma etapa. Um anúncio se intromete entre o botão final e o POST (`aposBotaoFinal`).
 - `core/falhas.ts` — falha transitória volta à fila (2/10/30 min, 3x); captcha/vaga encerrada/recusa do servidor, não.
+- `extensao/` + `core/extensao.ts` — extensão MV3 que roda no navegador DA PESSOA e só **relata**: se a plataforma exige conta e quais campos obrigatórios o perfil não cobre. Nunca preenche, clica ou envia. `conteudo.js` tem o registro `PlatformHandler` (handler dedicado por domínio, `GENERICO` para o resto) — o mesmo princípio do `PlatformAdapter`. Na dúvida devolve `null` ("não sei dizer"), nunca um palpite. Fronteira de confiança: `/extensao/*` exige token, e o núcleo devolve só **booleanos** do perfil, nunca o valor de um dado pessoal.
+- `core/sessao.ts` — login manual assistido para plataforma com conta (Indeed; Gupy depois): janela visível do robô na página de login, a pessoa entra, o robô só observa a URL sair das telas de login e então a **prova de login** do adapter (`adapter.sessao`). Sessão fica no perfil persistente do navegador (cifrado pelo SO), nada no banco além de `conexoes[id].sessao {validadaEm, valida}`. Sessão caída segura a fila só daquela plataforma. Nunca ler o formulário de login; nunca contornar anti-robô.
 
 ## Invariantes
 

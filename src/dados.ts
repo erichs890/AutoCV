@@ -79,6 +79,7 @@ export const PLATAFORMAS: Plataforma[] = [
     cor: 'bg-side-top',
     disponivel: true,
     site: 'https://br.indeed.com',
+    login: true,
     nota: 'Login manual uma vez; a sessão fica no perfil do navegador do robô. Semiautomático por construção: o Indeed bloqueia navegador oculto e desafia cargas seguidas, então é uma varredura por dia, em janela visível, e o robô para e chama você diante de um bloqueio.',
   },
 
